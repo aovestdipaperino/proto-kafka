@@ -2808,6 +2808,22 @@ fn encode<T: Encodable>(encodable: &T, bytes: &mut bytes::BytesMut, version: i16
     })
 }
 
+#[cfg(feature = "messages_enums")]
+#[cfg(feature = "broker")]
+fn encode_into<T: Encodable, B: crate::protocol::buf::ByteBufMut>(
+    encodable: &T,
+    buf: &mut B,
+    version: i16,
+) -> Result<()> {
+    encodable.encode(buf, version).with_context(|| {
+        format!(
+            "Failed to encode {} v{} body",
+            std::any::type_name::<T>(),
+            version
+        )
+    })
+}
+
 /// Wrapping enum for all responses in the Kafka protocol.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
@@ -3082,6 +3098,103 @@ impl ResponseKind {
             ResponseKind::DescribeShareGroupOffsets(x) => encode(x, bytes, version),
             ResponseKind::AlterShareGroupOffsets(x) => encode(x, bytes, version),
             ResponseKind::DeleteShareGroupOffsets(x) => encode(x, bytes, version),
+        }
+    }
+    /// Encode the message into a `ByteBufMut` (e.g. `SegmentedBuf` for zero-copy).
+    #[cfg(feature = "broker")]
+    pub fn encode_into<B: crate::protocol::buf::ByteBufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+    ) -> anyhow::Result<()> {
+        match self {
+            ResponseKind::Produce(x) => encode_into(x, buf, version),
+            ResponseKind::Fetch(x) => encode_into(x, buf, version),
+            ResponseKind::ListOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::Metadata(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetCommit(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetFetch(x) => encode_into(x, buf, version),
+            ResponseKind::FindCoordinator(x) => encode_into(x, buf, version),
+            ResponseKind::JoinGroup(x) => encode_into(x, buf, version),
+            ResponseKind::Heartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::LeaveGroup(x) => encode_into(x, buf, version),
+            ResponseKind::SyncGroup(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeGroups(x) => encode_into(x, buf, version),
+            ResponseKind::ListGroups(x) => encode_into(x, buf, version),
+            ResponseKind::SaslHandshake(x) => encode_into(x, buf, version),
+            ResponseKind::ApiVersions(x) => encode_into(x, buf, version),
+            ResponseKind::CreateTopics(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteTopics(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteRecords(x) => encode_into(x, buf, version),
+            ResponseKind::InitProducerId(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetForLeaderEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::AddPartitionsToTxn(x) => encode_into(x, buf, version),
+            ResponseKind::AddOffsetsToTxn(x) => encode_into(x, buf, version),
+            ResponseKind::EndTxn(x) => encode_into(x, buf, version),
+            ResponseKind::WriteTxnMarkers(x) => encode_into(x, buf, version),
+            ResponseKind::TxnOffsetCommit(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeAcls(x) => encode_into(x, buf, version),
+            ResponseKind::CreateAcls(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteAcls(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterReplicaLogDirs(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeLogDirs(x) => encode_into(x, buf, version),
+            ResponseKind::SaslAuthenticate(x) => encode_into(x, buf, version),
+            ResponseKind::CreatePartitions(x) => encode_into(x, buf, version),
+            ResponseKind::CreateDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::RenewDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::ExpireDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteGroups(x) => encode_into(x, buf, version),
+            ResponseKind::ElectLeaders(x) => encode_into(x, buf, version),
+            ResponseKind::IncrementalAlterConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterPartitionReassignments(x) => encode_into(x, buf, version),
+            ResponseKind::ListPartitionReassignments(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetDelete(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeClientQuotas(x) => encode_into(x, buf, version),
+            ResponseKind::AlterClientQuotas(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeUserScramCredentials(x) => encode_into(x, buf, version),
+            ResponseKind::AlterUserScramCredentials(x) => encode_into(x, buf, version),
+            ResponseKind::Vote(x) => encode_into(x, buf, version),
+            ResponseKind::BeginQuorumEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::EndQuorumEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeQuorum(x) => encode_into(x, buf, version),
+            ResponseKind::AlterPartition(x) => encode_into(x, buf, version),
+            ResponseKind::UpdateFeatures(x) => encode_into(x, buf, version),
+            ResponseKind::Envelope(x) => encode_into(x, buf, version),
+            ResponseKind::FetchSnapshot(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeCluster(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeProducers(x) => encode_into(x, buf, version),
+            ResponseKind::BrokerRegistration(x) => encode_into(x, buf, version),
+            ResponseKind::BrokerHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::UnregisterBroker(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeTransactions(x) => encode_into(x, buf, version),
+            ResponseKind::ListTransactions(x) => encode_into(x, buf, version),
+            ResponseKind::AllocateProducerIds(x) => encode_into(x, buf, version),
+            ResponseKind::ConsumerGroupHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::ConsumerGroupDescribe(x) => encode_into(x, buf, version),
+            ResponseKind::ControllerRegistration(x) => encode_into(x, buf, version),
+            ResponseKind::GetTelemetrySubscriptions(x) => encode_into(x, buf, version),
+            ResponseKind::PushTelemetry(x) => encode_into(x, buf, version),
+            ResponseKind::AssignReplicasToDirs(x) => encode_into(x, buf, version),
+            ResponseKind::ListConfigResources(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeTopicPartitions(x) => encode_into(x, buf, version),
+            ResponseKind::ShareGroupHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::ShareGroupDescribe(x) => encode_into(x, buf, version),
+            ResponseKind::ShareFetch(x) => encode_into(x, buf, version),
+            ResponseKind::ShareAcknowledge(x) => encode_into(x, buf, version),
+            ResponseKind::AddRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::RemoveRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::UpdateRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::InitializeShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::ReadShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::WriteShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::ReadShareGroupStateSummary(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeShareGroupOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::AlterShareGroupOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteShareGroupOffsets(x) => encode_into(x, buf, version),
         }
     }
     /// Decode the message from the provided buffer and version

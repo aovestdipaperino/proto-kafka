@@ -607,7 +607,17 @@ impl Encoder<&Option<Vec<u8>>> for Bytes {
 
 impl Encoder<Option<&bytes::Bytes>> for Bytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&bytes::Bytes>) -> Result<()> {
-        Bytes.encode(buf, value.map(|s| &**s))
+        if let Some(s) = value {
+            if s.len() > i32::MAX as usize {
+                bail!("Data is too long to encode ({} bytes)", s.len());
+            }
+            Int32.encode(buf, s.len() as i32)?;
+            buf.put_shared_bytes(s.clone());
+            Ok(())
+        } else {
+            Int32.encode(buf, -1)?;
+            Ok(())
+        }
     }
     fn compute_size(&self, value: Option<&bytes::Bytes>) -> Result<usize> {
         Bytes.compute_size(value.map(|s| &**s))
@@ -756,7 +766,17 @@ impl Encoder<&Option<Vec<u8>>> for CompactBytes {
 
 impl Encoder<Option<&bytes::Bytes>> for CompactBytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&bytes::Bytes>) -> Result<()> {
-        CompactBytes.encode(buf, value.map(|s| &**s))
+        if let Some(s) = value {
+            if s.len() >= u32::MAX as usize {
+                bail!("CompactBytes is too long to encode ({} bytes)", s.len());
+            }
+            UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
+            buf.put_shared_bytes(s.clone());
+            Ok(())
+        } else {
+            UnsignedVarInt.encode(buf, 0)?;
+            Ok(())
+        }
     }
     fn compute_size(&self, value: Option<&bytes::Bytes>) -> Result<usize> {
         CompactBytes.compute_size(value.map(|s| &**s))
