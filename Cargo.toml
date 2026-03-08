@@ -3,7 +3,7 @@ members = ["protocol_codegen"]
 
 [package]
 name = "kafka-protocol"
-version = "0.16.0"
+version = "0.17.0"
 authors = [
     "Diggory Blake <diggsey@googlemail.com>",
     "Charlotte McElwain <charlotte.c.mcelwain@gmail.com>",
@@ -55,7 +55,7 @@ anyhow = "1.0.80"
 
 
 [dev-dependencies]
-testcontainers = { version = "0.20.1", features = ["blocking", "watchdog"] }
+testcontainers = { version = "0.25.0", features = ["blocking", "watchdog"] }
 
 # Display required features for items when rendering for docs.rs
 [package.metadata.docs.rs]
