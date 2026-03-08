@@ -417,13 +417,15 @@ impl RecordBatchEncoder {
     }
 }
 
-/// An iterator over records in a Kafka record batch.
+/// An iterator over records in one or more Kafka record batches.
 ///
 /// This iterator provides a way to sequentially access individual records
-/// within a decoded record batch, handling decompression and deserialization
-/// as needed.
+/// across all batches in the buffer. When records in the current batch are
+/// exhausted, it automatically advances to the next batch if more data is
+/// available, mirroring the behavior of [`RecordBatchDecoder::decode_all`].
 pub struct RecordIterator {
     buf: Bytes,
+    source: Bytes,
     batch_decode_info: BatchDecodeInfo,
     current: i64,
 }
@@ -433,12 +435,15 @@ impl Iterator for RecordIterator {
 
     fn next(&mut self) -> Option<Result<Record>> {
         if self.current >= self.batch_decode_info.record_count as i64 {
-            debug_assert!(
-                !self.has_bytes_remaining(),
-                "Iterator exhausted but buffer still has {} bytes remaining",
-                self.buf.len()
-            );
-            return None;
+            // Current batch exhausted — try loading the next batch
+            if !self.source.is_empty() {
+                match self.try_load_next_batch() {
+                    Ok(()) => {}
+                    Err(e) => return Some(Err(e)),
+                }
+            } else {
+                return None;
+            }
         }
         self.current += 1;
         Some(Record::decode_new(
@@ -450,31 +455,43 @@ impl Iterator for RecordIterator {
 }
 
 impl RecordIterator {
-    fn new(buf: &mut Bytes) -> Self {
-        let version = buf
-            .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))
-            .unwrap()[0] as i8;
-        let (batch_decode_info, buf) = RecordBatchDecoder::decode_batch_info(buf, version).unwrap();
+    fn new(buf: &mut Bytes) -> Result<Self> {
+        let version =
+            buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
+        let (batch_decode_info, record_buf) =
+            RecordBatchDecoder::decode_batch_info(buf, version)?;
 
-        RecordIterator {
-            buf,
+        Ok(RecordIterator {
+            buf: record_buf,
+            source: buf.clone(),
             batch_decode_info,
             current: 0,
-        }
+        })
     }
 
-    /// Returns `true` if there are bytes remaining in the buffer after iteration is complete.
-    /// This can be used to detect if the record batch contains extra data beyond the expected records.
-    pub fn has_bytes_remaining(&self) -> bool {
-        !self.buf.is_empty()
+    fn try_load_next_batch(&mut self) -> Result<()> {
+        let version = self
+            .source
+            .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0]
+            as i8;
+        let (batch_decode_info, record_buf) =
+            RecordBatchDecoder::decode_batch_info(&mut self.source, version)?;
+        self.buf = record_buf;
+        self.batch_decode_info = batch_decode_info;
+        self.current = 0;
+        Ok(())
     }
 }
 
 impl RecordBatchDecoder {
-    /// Decode the provided buffer into an iterator over Result<Record> items.
+    /// Decode the provided buffer into an iterator over records.
+    ///
+    /// The returned iterator yields `Result<Record>` items and automatically
+    /// advances across multiple batches if the buffer contains more than one.
+    ///
     /// # Arguments
     /// * `buf` - The buffer to decode.
-    pub fn records(buf: &mut Bytes) -> RecordIterator {
+    pub fn records(buf: &mut Bytes) -> Result<RecordIterator> {
         RecordIterator::new(buf)
     }
 
@@ -1114,11 +1131,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut iterator = RecordBatchDecoder::records(&mut buf.freeze());
+        let mut iterator = RecordBatchDecoder::records(&mut buf.freeze()).unwrap();
         let decoded_records: Vec<Record> = iterator.by_ref().map(|r| r.unwrap()).collect();
 
         assert_eq!(records_to_encode, decoded_records);
-        assert!(!iterator.has_bytes_remaining());
     }
 
     #[test]
@@ -1146,6 +1162,7 @@ mod tests {
         // Create RecordIterator directly with invalid data
         let mut iterator = RecordIterator {
             buf: invalid_record_data,
+            source: Bytes::new(),
             batch_decode_info,
             current: 0,
         };
@@ -1187,6 +1204,7 @@ mod tests {
 
         let mut iterator = RecordIterator {
             buf: invalid_data,
+            source: Bytes::new(),
             batch_decode_info,
             current: 0,
         };
@@ -1228,6 +1246,7 @@ mod tests {
 
         let iterator2 = RecordIterator {
             buf: Bytes::from(vec![0xFF]),
+            source: Bytes::new(),
             batch_decode_info: batch_decode_info2,
             current: 0,
         };
@@ -1235,5 +1254,72 @@ mod tests {
         let only_successful: Vec<Record> = iterator2.filter_map(|result| result.ok()).collect();
 
         assert_eq!(only_successful.len(), 0); // No successful records with invalid data
+    }
+
+    #[test]
+    fn test_record_iterator_multiple_batches() {
+        let batch1_records = vec![
+            Record {
+                transactional: false,
+                control: false,
+                partition_leader_epoch: 0,
+                producer_id: 0,
+                producer_epoch: 0,
+                sequence: 0,
+                timestamp_type: TimestampType::Creation,
+                offset: 0,
+                timestamp: 0,
+                key: Some(Bytes::from("batch1_key1")),
+                value: Some(Bytes::from("batch1_value1")),
+                headers: IndexMap::new(),
+            },
+            Record {
+                transactional: false,
+                control: false,
+                partition_leader_epoch: 0,
+                producer_id: 0,
+                producer_epoch: 0,
+                sequence: 1,
+                timestamp_type: TimestampType::Creation,
+                offset: 1,
+                timestamp: 1,
+                key: Some(Bytes::from("batch1_key2")),
+                value: Some(Bytes::from("batch1_value2")),
+                headers: IndexMap::new(),
+            },
+        ];
+
+        let batch2_records = vec![Record {
+            transactional: false,
+            control: false,
+            partition_leader_epoch: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            sequence: 0,
+            timestamp_type: TimestampType::Creation,
+            offset: 0,
+            timestamp: 0,
+            key: Some(Bytes::from("batch2_key1")),
+            value: Some(Bytes::from("batch2_value1")),
+            headers: IndexMap::new(),
+        }];
+
+        let opts = RecordEncodeOptions {
+            version: 2,
+            compression: Compression::None,
+        };
+
+        // Encode two batches into a single buffer
+        let mut buf = BytesMut::new();
+        RecordBatchEncoder::encode(&mut buf, &batch1_records, &opts).unwrap();
+        RecordBatchEncoder::encode(&mut buf, &batch2_records, &opts).unwrap();
+
+        let iterator = RecordBatchDecoder::records(&mut buf.freeze()).unwrap();
+        let all_records: Vec<Record> = iterator.map(|r| r.unwrap()).collect();
+
+        assert_eq!(all_records.len(), 3);
+        assert_eq!(all_records[0].key, Some(Bytes::from("batch1_key1")));
+        assert_eq!(all_records[1].key, Some(Bytes::from("batch1_key2")));
+        assert_eq!(all_records[2].key, Some(Bytes::from("batch2_key1")));
     }
 }
