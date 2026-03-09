@@ -1836,6 +1836,7 @@ impl HeaderVersion for FetchResponse {
 }
 
 #[cfg(test)]
+#[cfg(all(feature = "broker", feature = "client"))]
 mod tests {
     use super::*;
     use bytes::{Buf, BytesMut};
