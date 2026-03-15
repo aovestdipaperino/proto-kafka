@@ -3,3 +3,4 @@
 /xtask/target
 .idea/
 kafka_repo
+.codegraph
