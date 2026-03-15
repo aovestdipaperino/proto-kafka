@@ -1072,24 +1072,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9dbbfed4e59ba9750e15ba154fdfd9329cee16ff3df539c2666b70f58cc32105"
 
 [[package]]
-name = "kafka-protocol"
-version = "0.17.0"
-dependencies = [
- "anyhow",
- "bytes",
- "crc",
- "crc32c",
- "flate2",
- "indexmap 2.12.1",
- "lz4",
- "paste",
- "snap",
- "testcontainers",
- "uuid",
- "zstd",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1478,6 +1460,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "proto-kafka"
+version = "0.16.1"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crc",
+ "crc32c",
+ "flate2",
+ "indexmap 2.12.1",
+ "lz4",
+ "paste",
+ "snap",
+ "testcontainers",
+ "uuid",
+ "zstd",
 ]
 
 [[package]]
