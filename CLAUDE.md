@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fork of [tychedelia/kafka-protocol-rs](https://github.com/tychedelia/kafka-protocol-rs), which is no longer actively maintained. This is a Rust implementation of the Kafka wire protocol (`proto-kafka` crate, v0.16.1). Message types are **code-generated** from Kafka's JSON schema files, currently tracking Kafka 4.1.0. The crate covers all 87 API keys with full version support.
+Fork of [tychedelia/kafka-protocol-rs](https://github.com/tychedelia/kafka-protocol-rs), which seems no longer actively maintained. This is a Rust implementation of the Kafka wire protocol (`proto-kafka` crate, v0.16.1). Message types are **code-generated** from Kafka's JSON schema files, currently tracking Kafka 4.1.0. The crate covers all 87 API keys with full version support.
 
 ## Build Commands
 
