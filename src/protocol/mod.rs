@@ -13,6 +13,8 @@ use bytes::Bytes;
 pub mod buf;
 pub mod types;
 
+pub use buf::SegmentedBuf;
+
 mod str_bytes {
     use bytes::Bytes;
     use std::borrow::Borrow;
