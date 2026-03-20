@@ -31,7 +31,7 @@
 //!     }
 //! }
 //!
-//! fn decompress_record_batch_data(compressed_buffer: &mut bytes::Bytes, compression: Compression) -> anyhow::Result<Bytes> {
+//! fn decompress_record_batch_data(compressed_buffer: &mut bytes::Bytes, compression: Compression) -> kafka_protocol::error::Result<Bytes> {
 //!         match compression {
 //!             Compression::None => Ok(compressed_buffer.to_vec().into()),
 //!             _ => { panic!("Compression not implemented") }
@@ -56,8 +56,7 @@
     clippy::inconsistent_struct_constructor
 )]
 
-use anyhow::{anyhow, bail, Result};
-use crate::error::ProtoError;
+use crate::error::{ProtoError, Result};
 use bytes::{Bytes, BytesMut};
 use crc::{Crc, CRC_32_ISO_HDLC};
 use crc32c::crc32c;
@@ -71,19 +70,6 @@ use crate::protocol::{
 use super::compression::{self as cmpr, Compressor, Decompressor};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
-
-/// Temporary bridge: convert `anyhow::Error` into `ProtoError` for compression closures.
-/// This will be removed when records.rs is fully migrated to `ProtoError` (Task 5).
-fn anyhow_to_proto(e: anyhow::Error) -> ProtoError {
-    match e.downcast::<ProtoError>() {
-        Ok(proto_err) => proto_err,
-        Err(e) => ProtoError::Compression {
-            operation: "record_encode_decode",
-            codec: "bridge",
-            source: Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()),
-        },
-    }
-}
 
 /// IEEE (checksum) cyclic redundancy check.
 pub const IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
@@ -241,9 +227,9 @@ impl RecordBatchEncoder {
     {
         let records = records.into_iter();
         match options.version {
-            0..=1 => bail!("message sets v{} are unsupported", options.version),
+            0..=1 => Err(ProtoError::UnsupportedMessageSetVersion { version: options.version }),
             2 => Self::encode_new(buf, records, options, compressor),
-            _ => bail!("Unknown record batch version"),
+            _ => Err(ProtoError::UnknownRecordBatchVersion { version: options.version }),
         }
     }
 
@@ -362,9 +348,7 @@ impl RecordBatchEncoder {
 
         // Record count
         if num_records > i32::MAX as usize {
-            bail!(
-                "Too many records to encode in one batch ({num_records} records)"
-            );
+            return Err(ProtoError::TooManyRecords { count: num_records });
         }
         types::Int32.encode(buf, num_records as i32)?;
 
@@ -378,29 +362,34 @@ impl RecordBatchEncoder {
         } else {
             match options.compression {
                 Compression::None => cmpr::None::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
                 })?,
                 #[cfg(feature = "snappy")]
                 Compression::Snappy => cmpr::Snappy::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
                 })?,
                 #[cfg(feature = "gzip")]
                 Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
                 })?,
                 #[cfg(feature = "lz4")]
                 Compression::Lz4 => cmpr::Lz4::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
                 })?,
                 #[cfg(feature = "zstd")]
                 Compression::Zstd => cmpr::Zstd::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
                 })?,
                 #[allow(unreachable_patterns)]
                 c => {
-                    return Err(anyhow!(
-                        "Support for {c:?} is not enabled as a cargo feature"
-                    ))
+                    let name = match c {
+                        Compression::None => "none",
+                        Compression::Gzip => "gzip",
+                        Compression::Snappy => "snappy",
+                        Compression::Lz4 => "lz4",
+                        Compression::Zstd => "zstd",
+                    };
+                    return Err(ProtoError::CompressionNotEnabled { algorithm: name });
                 }
             }
         }
@@ -409,9 +398,7 @@ impl RecordBatchEncoder {
         // Fill size gap
         let batch_size = batch_end - batch_start;
         if batch_size > i32::MAX as usize {
-            bail!(
-                "Record batch was too large to encode ({batch_size} bytes)"
-            );
+            return Err(ProtoError::BatchTooLarge { size: batch_size });
         }
 
         buf.fill_typed_gap(size_gap, batch_size as i32);
@@ -569,11 +556,9 @@ impl RecordBatchDecoder {
         // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let compression = match version {
-            0..=1 => bail!("message sets v{version} are unsupported"),
+            0..=1 => Err(ProtoError::UnsupportedMessageSetVersion { version }),
             2 => Self::decode_new_batch(buf, version, records, decompress_func),
-            _ => {
-                bail!("Unknown record batch version ({version})");
-            }
+            _ => Err(ProtoError::UnknownRecordBatchVersion { version }),
         }?;
         Ok((version, compression))
     }
@@ -585,7 +570,7 @@ impl RecordBatchDecoder {
         // Batch length
         let batch_length: i32 = types::Int32.decode(buf)?;
         if batch_length < 0 {
-            bail!("Unexpected negative batch size: {batch_length}");
+            return Err(ProtoError::NegativeLength { field: "batch size", value: batch_length as i64 });
         }
 
         // Convert buf to bytes
@@ -597,7 +582,7 @@ impl RecordBatchDecoder {
         // Magic byte
         let magic: i8 = types::Int8.decode(buf)?;
         if magic != version {
-            bail!("Version mismatch ({magic} != {version})");
+            return Err(ProtoError::VersionMismatch { expected: version, actual: magic });
         }
 
         // CRC
@@ -605,9 +590,7 @@ impl RecordBatchDecoder {
         let actual_crc = crc32c(buf);
 
         if supplied_crc != actual_crc {
-            bail!(
-                "Cyclic redundancy check failed ({supplied_crc} != {actual_crc})"
-            );
+            return Err(ProtoError::CrcMismatch { expected: actual_crc, actual: supplied_crc });
         }
 
         // Attributes
@@ -621,7 +604,7 @@ impl RecordBatchDecoder {
             3 => Compression::Lz4,
             4 => Compression::Zstd,
             other => {
-                bail!("Unknown compression algorithm used: {other}");
+                return Err(ProtoError::UnknownCompression { algorithm: other });
             }
         };
         let timestamp_type = if (attributes & (1 << 3)) != 0 {
@@ -651,7 +634,7 @@ impl RecordBatchDecoder {
         // Record count
         let record_count: i32 = types::Int32.decode(buf)?;
         if record_count < 0 {
-            bail!("Unexpected negative record count ({record_count})");
+            return Err(ProtoError::NegativeLength { field: "record count", value: record_count as i64 });
         }
         let record_count = record_count as usize;
 
@@ -705,29 +688,34 @@ impl RecordBatchDecoder {
         } else {
             match compression {
                 Compression::None => cmpr::None::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records)
                 })?,
                 #[cfg(feature = "snappy")]
                 Compression::Snappy => cmpr::Snappy::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records)
                 })?,
                 #[cfg(feature = "gzip")]
                 Compression::Gzip => cmpr::Gzip::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records)
                 })?,
                 #[cfg(feature = "zstd")]
                 Compression::Zstd => cmpr::Zstd::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records)
                 })?,
                 #[cfg(feature = "lz4")]
                 Compression::Lz4 => cmpr::Lz4::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records)
                 })?,
                 #[allow(unreachable_patterns)]
                 c => {
-                    return Err(anyhow!(
-                        "Support for {c:?} is not enabled as a cargo feature"
-                    ))
+                    let name = match c {
+                        Compression::None => "none",
+                        Compression::Gzip => "gzip",
+                        Compression::Snappy => "snappy",
+                        Compression::Lz4 => "lz4",
+                        Compression::Zstd => "zstd",
+                    };
+                    return Err(ProtoError::CompressionNotEnabled { algorithm: name });
                 }
             }
         }
@@ -747,7 +735,7 @@ impl Record {
         // Size
         let size = self.compute_size_new(min_offset, min_timestamp, options)?;
         if size > i32::MAX as usize {
-            bail!("Record was too large to encode ({size} bytes)");
+            return Err(ProtoError::RecordTooLarge { size });
         }
         types::VarInt.encode(buf, size as i32)?;
 
@@ -757,29 +745,21 @@ impl Record {
         // Timestamp delta
         let timestamp_delta = self.timestamp - min_timestamp;
         if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            bail!(
-                "Timestamps within batch are too far apart ({}, {})",
-                min_timestamp,
-                self.timestamp
-            );
+            return Err(ProtoError::TimestampDeltaOverflow { min: min_timestamp, max: self.timestamp });
         }
         types::VarInt.encode(buf, timestamp_delta as i32)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
-            bail!(
-                "Offsets within batch are too far apart ({}, {})",
-                min_offset,
-                self.offset
-            );
+            return Err(ProtoError::OffsetDeltaOverflow { min: min_offset, max: self.offset });
         }
         types::VarInt.encode(buf, offset_delta as i32)?;
 
         // Key
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
-                bail!("Record key was too large to encode ({} bytes)", k.len());
+                return Err(ProtoError::FieldTooLarge { field: "record key", size: k.len() });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
             buf.put_slice(k);
@@ -790,7 +770,7 @@ impl Record {
         // Value
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
-                bail!("Record value was too large to encode ({} bytes)", v.len());
+                return Err(ProtoError::FieldTooLarge { field: "record value", size: v.len() });
             }
             types::VarInt.encode(buf, v.len() as i32)?;
             buf.put_slice(v);
@@ -800,16 +780,13 @@ impl Record {
 
         // Headers
         if self.headers.len() > i32::MAX as usize {
-            bail!("Too many record headers encode ({})", self.headers.len());
+            return Err(ProtoError::FieldTooLarge { field: "record headers count", size: self.headers.len() });
         }
         types::VarInt.encode(buf, self.headers.len() as i32)?;
         for (k, v) in &self.headers {
             // Key len
             if k.len() > i32::MAX as usize {
-                bail!(
-                    "Record header key was too large to encode ({} bytes)",
-                    k.len()
-                );
+                return Err(ProtoError::FieldTooLarge { field: "record header key", size: k.len() });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
 
@@ -819,10 +796,7 @@ impl Record {
             // Value
             if let Some(v) = v.as_ref() {
                 if v.len() > i32::MAX as usize {
-                    bail!(
-                        "Record header value was too large to encode ({} bytes)",
-                        v.len()
-                    );
+                    return Err(ProtoError::FieldTooLarge { field: "record header value", size: v.len() });
                 }
                 types::VarInt.encode(buf, v.len() as i32)?;
                 buf.put_slice(v);
@@ -847,29 +821,21 @@ impl Record {
         // Timestamp delta
         let timestamp_delta = self.timestamp - min_timestamp;
         if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            bail!(
-                "Timestamps within batch are too far apart ({}, {})",
-                min_timestamp,
-                self.timestamp
-            );
+            return Err(ProtoError::TimestampDeltaOverflow { min: min_timestamp, max: self.timestamp });
         }
         total_size += types::VarInt.compute_size(timestamp_delta as i32)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
-            bail!(
-                "Offsets within batch are too far apart ({}, {})",
-                min_offset,
-                self.offset
-            );
+            return Err(ProtoError::OffsetDeltaOverflow { min: min_offset, max: self.offset });
         }
         total_size += types::VarInt.compute_size(offset_delta as i32)?;
 
         // Key
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
-                bail!("Record key was too large to encode ({} bytes)", k.len());
+                return Err(ProtoError::FieldTooLarge { field: "record key", size: k.len() });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
             total_size += k.len();
@@ -880,7 +846,7 @@ impl Record {
         // Value len
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
-                bail!("Record value was too large to encode ({} bytes)", v.len());
+                return Err(ProtoError::FieldTooLarge { field: "record value", size: v.len() });
             }
             total_size += types::VarInt.compute_size(v.len() as i32)?;
             total_size += v.len();
@@ -890,16 +856,13 @@ impl Record {
 
         // Headers
         if self.headers.len() > i32::MAX as usize {
-            bail!("Too many record headers encode ({})", self.headers.len());
+            return Err(ProtoError::FieldTooLarge { field: "record headers count", size: self.headers.len() });
         }
         total_size += types::VarInt.compute_size(self.headers.len() as i32)?;
         for (k, v) in &self.headers {
             // Key len
             if k.len() > i32::MAX as usize {
-                bail!(
-                    "Record header key was too large to encode ({} bytes)",
-                    k.len()
-                );
+                return Err(ProtoError::FieldTooLarge { field: "record header key", size: k.len() });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
 
@@ -909,10 +872,7 @@ impl Record {
             // Value
             if let Some(v) = v.as_ref() {
                 if v.len() > i32::MAX as usize {
-                    bail!(
-                        "Record header value was too large to encode ({} bytes)",
-                        v.len()
-                    );
+                    return Err(ProtoError::FieldTooLarge { field: "record header value", size: v.len() });
                 }
                 total_size += types::VarInt.compute_size(v.len() as i32)?;
                 total_size += v.len();
@@ -931,7 +891,7 @@ impl Record {
         // Size
         let size: i32 = types::VarInt.decode(buf)?;
         if size < 0 {
-            bail!("Unexpected negative record size: {size}");
+            return Err(ProtoError::NegativeLength { field: "record size", value: size as i64 });
         }
 
         // Ensure we don't over-read
@@ -953,7 +913,7 @@ impl Record {
         let key_len: i32 = types::VarInt.decode(buf)?;
         let key = match key_len.cmp(&-1) {
             Ordering::Less => {
-                bail!("Unexpected negative record key length ({key_len} bytes)");
+                return Err(ProtoError::NegativeLength { field: "record key length", value: key_len as i64 });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(key_len as usize)?),
@@ -963,9 +923,7 @@ impl Record {
         let value_len: i32 = types::VarInt.decode(buf)?;
         let value = match value_len.cmp(&-1) {
             Ordering::Less => {
-                bail!(
-                    "Unexpected negative record value length ({value_len} bytes)"
-                );
+                return Err(ProtoError::NegativeLength { field: "record value length", value: value_len as i64 });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
@@ -974,7 +932,7 @@ impl Record {
         // Headers
         let num_headers: i32 = types::VarInt.decode(buf)?;
         if num_headers < 0 {
-            bail!("Unexpected negative record header count: {num_headers}");
+            return Err(ProtoError::NegativeLength { field: "record header count", value: num_headers as i64 });
         }
         let num_headers = num_headers as usize;
 
@@ -983,9 +941,7 @@ impl Record {
             // Key len
             let key_len: i32 = types::VarInt.decode(buf)?;
             if key_len < 0 {
-                bail!(
-                    "Unexpected negative record header key length ({key_len} bytes)"
-                );
+                return Err(ProtoError::NegativeLength { field: "record header key length", value: key_len as i64 });
             }
 
             // Key
@@ -997,9 +953,7 @@ impl Record {
             // Value
             let value = match value_len.cmp(&-1) {
                 Ordering::Less => {
-                    bail!(
-                        "Unexpected negative record header value length ({value_len} bytes)"
-                    );
+                    return Err(ProtoError::NegativeLength { field: "record header value length", value: value_len as i64 });
                 }
                 Ordering::Equal => None,
                 Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
