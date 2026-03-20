@@ -311,14 +311,38 @@ impl SegmentedBuf {
         }
     }
 
+    /// Find which segment contains the given range and return the segment index
+    /// plus the local start/end offsets, or an error.
+    fn find_range_segment(&self, r: &Range<usize>) -> crate::error::Result<(usize, usize, usize)> {
+        let mut pos = 0;
+        for (i, seg) in self.segments.iter().enumerate() {
+            let seg_len = seg.len();
+            if r.start >= pos && r.end <= pos + seg_len {
+                return match seg {
+                    Segment::Inline(_) => Ok((i, r.start - pos, r.end - pos)),
+                    Segment::Shared(_) => Err(crate::error::ProtoError::FieldTooLarge {
+                        field: "range: cannot get mutable range from Shared segment",
+                        size: r.start,
+                    }),
+                };
+            }
+            pos += seg_len;
+        }
+        Err(crate::error::ProtoError::FieldTooLarge {
+            field: "range: out of bounds",
+            size: r.start,
+        })
+    }
+
     /// Write an `i32` at the given absolute byte offset within the buffer.
     ///
     /// Used to patch the length prefix after the full message has been written.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the offset falls inside a `Shared` segment or is out of range.
-    pub fn patch_i32(&mut self, offset: usize, value: i32) {
+    /// Returns an error if the offset falls inside a `Shared` segment or is out
+    /// of range.
+    pub fn patch_i32(&mut self, offset: usize, value: i32) -> crate::error::Result<()> {
         let bytes = value.to_be_bytes();
         let mut pos = 0;
         for seg in &mut self.segments {
@@ -330,17 +354,20 @@ impl SegmentedBuf {
                         b[local..local + 4].copy_from_slice(&bytes);
                     }
                     Segment::Shared(_) => {
-                        panic!("Cannot patch into a Shared segment");
+                        return Err(crate::error::ProtoError::FieldTooLarge {
+                            field: "patch_i32: cannot write into Shared segment",
+                            size: offset,
+                        });
                     }
                 }
-                return;
+                return Ok(());
             }
             pos += seg_len;
         }
-        panic!(
-            "patch_i32: offset {} out of range (total {})",
-            offset, self.total_len
-        );
+        Err(crate::error::ProtoError::FieldTooLarge {
+            field: "patch_i32: offset out of range",
+            size: offset,
+        })
     }
 }
 
@@ -389,20 +416,19 @@ impl ByteBufMut for SegmentedBuf {
     }
 
     fn range(&mut self, r: Range<usize>) -> &mut [u8] {
-        let mut pos = 0;
-        for seg in &mut self.segments {
-            let seg_len = seg.len();
-            if r.start >= pos && r.end <= pos + seg_len {
-                let local_start = r.start - pos;
-                let local_end = r.end - pos;
-                return match seg {
-                    Segment::Inline(b) => &mut b[local_start..local_end],
-                    Segment::Shared(_) => panic!("Cannot get mutable range from Shared segment"),
-                };
-            }
-            pos += seg_len;
+        // Delegate to the fallible lookup; the trait contract requires a panic
+        // on misuse (callers always write into ranges they previously allocated
+        // via put_gap / seek).
+        let Ok((idx, local_start, local_end)) = self.find_range_segment(&r) else {
+            panic!(
+                "range {r:?} out of bounds or in Shared segment (total {})",
+                self.total_len
+            )
+        };
+        match &mut self.segments[idx] {
+            Segment::Inline(b) => &mut b[local_start..local_end],
+            Segment::Shared(_) => unreachable!("find_range_segment verified Inline"),
         }
-        panic!("range {:?} out of bounds (total {})", r, self.total_len);
     }
 
     fn put_shared_bytes(&mut self, bytes: Bytes) {
@@ -633,17 +659,16 @@ mod tests {
         let mut buf = SegmentedBuf::new();
         buf.put_slice(&[0u8; 4]); // placeholder
         buf.put_slice(b"data");
-        buf.patch_i32(0, 42);
+        buf.patch_i32(0, 42).unwrap();
 
         assert_eq!(buf.chunk()[..4], 42i32.to_be_bytes());
     }
 
     #[test]
-    #[should_panic(expected = "Cannot patch into a Shared segment")]
-    fn segmented_buf_patch_i32_into_shared_panics() {
+    fn segmented_buf_patch_i32_into_shared_errors() {
         let mut buf = SegmentedBuf::new();
         buf.put_shared_bytes(Bytes::from_static(&[0u8; 4]));
-        buf.patch_i32(0, 42);
+        assert!(buf.patch_i32(0, 42).is_err());
     }
 
     #[test]
