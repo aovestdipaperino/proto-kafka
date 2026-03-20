@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use anyhow::{Context, Result};
+use crate::error::{ProtoError, Result};
 use bytes::buf::BufMut;
 use bytes::{Bytes, BytesMut};
 use flate2::write::{GzDecoder, GzEncoder};
@@ -26,8 +26,8 @@ impl<B: ByteBufMut> Compressor<B> for Gzip {
 
         // Compress directly into the target buffer
         let mut e = GzEncoder::new(buf.writer(), Compression::default());
-        e.write_all(&tmp).context("Failed to compress gzip")?;
-        e.finish().context("Failed to compress gzip")?;
+        e.write_all(&tmp).map_err(|e| ProtoError::Compression { operation: "compress", codec: "gzip", source: Box::new(e) })?;
+        e.finish().map_err(|e| ProtoError::Compression { operation: "compress", codec: "gzip", source: Box::new(e) })?;
 
         Ok(res)
     }
@@ -44,8 +44,8 @@ impl<B: ByteBuf> Decompressor<B> for Gzip {
         // Decompress directly from the input buffer
         let mut d = GzDecoder::new((&mut tmp).writer());
         d.write_all(&buf.copy_to_bytes(buf.remaining()))
-            .context("Failed to decompress gzip")?;
-        d.finish().context("Failed to decompress gzip")?;
+            .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "gzip", source: Box::new(e) })?;
+        d.finish().map_err(|e| ProtoError::Compression { operation: "decompress", codec: "gzip", source: Box::new(e) })?;
 
         f(&mut tmp.into())
     }

@@ -4,7 +4,7 @@
 //! allows encoding and decoding records into a [`Record`](crate::records::Record).
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use anyhow::Result;
+use crate::error::Result;
 
 #[cfg(feature = "gzip")]
 mod gzip;

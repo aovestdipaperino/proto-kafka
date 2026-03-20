@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::{ProtoError, Result};
 use bytes::{Buf as _, BufMut as _, Bytes, BytesMut};
 use snap::raw::{decompress_len, Decoder, Encoder, max_compress_len};
 
@@ -44,7 +44,7 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
                     &uncompressed.split_to(uncompressed_block_size),
                     compressed.gap_buf(compressed_block),
                 )
-                .context("failed to compress snappy block")?;
+                .map_err(|e| ProtoError::Compression { operation: "compress", codec: "snappy", source: Box::new(e) })?;
             // Truncate down to the final compressed size
             compressed.seek(block_offset + bytes_written);
 
@@ -66,7 +66,11 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
     {
         // See https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes
         if !compressed.has_remaining() {
-            anyhow::bail!("expected some bytes in snappy stream");
+            return Err(ProtoError::Compression {
+                operation: "decompress",
+                codec: "snappy",
+                source: Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "expected some bytes in snappy stream")),
+            });
         }
 
         // We fall back to non-Kafka "raw" snappy compression if the magic header is not present
@@ -77,11 +81,11 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
             .is_none_or(|magic| *magic != MAGIC_HEADER[..])
         {
             let compressed = compressed.copy_to_bytes(compressed.remaining());
-            let actual_len = decompress_len(&compressed).context("failed to read snappy header")?;
+            let actual_len = decompress_len(&compressed).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
             let mut tmp = BytesMut::zeroed(actual_len);
             Decoder::new()
                 .decompress(&compressed, &mut tmp)
-                .context("failed to decompress raw snappy bytes")?;
+                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
 
             return f(&mut tmp.into());
         }
@@ -90,14 +94,14 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
         while compressed.has_remaining() {
             let compressed_block_size = compressed
                 .try_get_u32()
-                .context("not enough bytes to read compressed block length")?
+                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?
                 as usize;
             let compressed_block = compressed
                 .try_get_bytes(compressed_block_size)
-                .context("not enough bytes for block")?;
+                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
 
             let uncompressed_block_length = decompress_len(&compressed_block)
-                .context("failed to get snappy uncompressed length")?;
+                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
             let uncompressed_block_start = uncompressed.len();
             uncompressed.resize(
                 uncompressed_block_start.saturating_add(uncompressed_block_length),
@@ -109,7 +113,7 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
                     &compressed_block,
                     &mut uncompressed[uncompressed_block_start..],
                 )
-                .context("failed to decompress snappy block")?;
+                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
         }
 
         f(&mut uncompressed.into())

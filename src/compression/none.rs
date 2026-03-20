@@ -1,5 +1,5 @@
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use anyhow::Result;
+use crate::error::Result;
 
 use super::{Compressor, Decompressor};
 

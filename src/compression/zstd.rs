@@ -1,5 +1,5 @@
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use anyhow::{Context, Result};
+use crate::error::{ProtoError, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use super::{Compressor, Decompressor};
@@ -22,7 +22,7 @@ impl<B: ByteBufMut> Compressor<B> for Zstd {
 
         // Compress directly into the target buffer
         zstd::stream::copy_encode(tmp.reader(), buf.writer(), COMPRESSION_LEVEL)
-            .context("Failed to compress zstd")?;
+            .map_err(|e| ProtoError::Compression { operation: "compress", codec: "zstd", source: Box::new(e) })?;
         Ok(res)
     }
 }
@@ -37,7 +37,7 @@ impl<B: ByteBuf> Decompressor<B> for Zstd {
         let mut tmp = BytesMut::new().writer();
         // Allocate a temporary buffer to hold the uncompressed bytes
         let buf = buf.copy_to_bytes(buf.remaining());
-        zstd::stream::copy_decode(buf.reader(), &mut tmp).context("Failed to decompress zstd")?;
+        zstd::stream::copy_decode(buf.reader(), &mut tmp).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "zstd", source: Box::new(e) })?;
 
         f(&mut tmp.into_inner().into())
     }
@@ -47,7 +47,7 @@ impl<B: ByteBuf> Decompressor<B> for Zstd {
 mod test {
     use crate::compression::Zstd;
     use crate::compression::{Compressor, Decompressor};
-    use anyhow::Result;
+    use crate::error::Result;
     use bytes::BytesMut;
     use std::fmt::Write;
     use std::str;
@@ -57,13 +57,13 @@ mod test {
     fn test_zstd() {
         let mut compressed = BytesMut::new();
         Zstd::compress(&mut compressed, |buf| -> Result<()> {
-            buf.write_str("hello zstd")?;
+            buf.write_str("hello zstd").unwrap();
             Ok(())
         })
         .unwrap();
 
         Zstd::decompress(&mut compressed, |buf| -> Result<()> {
-            let decompressed_str = str::from_utf8(buf.as_slice())?;
+            let decompressed_str = str::from_utf8(buf.as_slice()).unwrap();
             assert_eq!(decompressed_str, "hello zstd");
             Ok(())
         })

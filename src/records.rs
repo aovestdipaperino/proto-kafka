@@ -57,6 +57,7 @@
 )]
 
 use anyhow::{anyhow, bail, Result};
+use crate::error::ProtoError;
 use bytes::{Bytes, BytesMut};
 use crc::{Crc, CRC_32_ISO_HDLC};
 use crc32c::crc32c;
@@ -70,6 +71,20 @@ use crate::protocol::{
 use super::compression::{self as cmpr, Compressor, Decompressor};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+
+/// Temporary bridge: convert `anyhow::Error` into `ProtoError` for compression closures.
+/// This will be removed when records.rs is fully migrated to `ProtoError` (Task 5).
+fn anyhow_to_proto(e: anyhow::Error) -> ProtoError {
+    match e.downcast::<ProtoError>() {
+        Ok(proto_err) => proto_err,
+        Err(e) => ProtoError::Compression {
+            operation: "record_encode_decode",
+            codec: "bridge",
+            source: Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()),
+        },
+    }
+}
+
 /// IEEE (checksum) cyclic redundancy check.
 pub const IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
@@ -363,23 +378,23 @@ impl RecordBatchEncoder {
         } else {
             match options.compression {
                 Compression::None => cmpr::None::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "snappy")]
                 Compression::Snappy => cmpr::Snappy::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "gzip")]
                 Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "lz4")]
                 Compression::Lz4 => cmpr::Lz4::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "zstd")]
                 Compression::Zstd => cmpr::Zstd::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options).map_err(anyhow_to_proto)
                 })?,
                 #[allow(unreachable_patterns)]
                 c => {
@@ -690,23 +705,23 @@ impl RecordBatchDecoder {
         } else {
             match compression {
                 Compression::None => cmpr::None::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "snappy")]
                 Compression::Snappy => cmpr::Snappy::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "gzip")]
                 Compression::Gzip => cmpr::Gzip::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "zstd")]
                 Compression::Zstd => cmpr::Zstd::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
                 })?,
                 #[cfg(feature = "lz4")]
                 Compression::Lz4 => cmpr::Lz4::decompress(&mut buf, |buf| {
-                    Self::decode_new_records(buf, &batch_decode_info, version, records)
+                    Self::decode_new_records(buf, &batch_decode_info, version, records).map_err(anyhow_to_proto)
                 })?,
                 #[allow(unreachable_patterns)]
                 c => {
