@@ -8,11 +8,11 @@
 //!
 //! Decoding a set of records from a [`FetchResponse`](crate::messages::fetch_response::FetchResponse):
 //! ```rust
-//! use kafka_protocol::messages::FetchResponse;
-//! use kafka_protocol::protocol::Decodable;
-//! use kafka_protocol::records::RecordBatchDecoder;
+//! use proto_kafka::messages::FetchResponse;
+//! use proto_kafka::protocol::Decodable;
+//! use proto_kafka::records::RecordBatchDecoder;
 //! use bytes::Bytes;
-//! use kafka_protocol::records::Compression;
+//! use proto_kafka::records::Compression;
 //!
 //! # const HEADER: [u8; 45] = [ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,];
 //! # const RECORD: [u8; 79] = [ 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x43, 0x0, 0x0, 0x0, 0x0, 0x2, 0x73, 0x6d, 0x29, 0x7b, 0x0, 0b00000000, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x22, 0x1, 0xd0, 0xf, 0x2, 0xa, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0xa, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x0,];
@@ -31,7 +31,7 @@
 //!     }
 //! }
 //!
-//! fn decompress_record_batch_data(compressed_buffer: &mut bytes::Bytes, compression: Compression) -> kafka_protocol::error::Result<Bytes> {
+//! fn decompress_record_batch_data(compressed_buffer: &mut bytes::Bytes, compression: Compression) -> proto_kafka::error::Result<Bytes> {
 //!         match compression {
 //!             Compression::None => Ok(compressed_buffer.to_vec().into()),
 //!             _ => { panic!("Compression not implemented") }
@@ -227,9 +227,13 @@ impl RecordBatchEncoder {
     {
         let records = records.into_iter();
         match options.version {
-            0..=1 => Err(ProtoError::UnsupportedMessageSetVersion { version: options.version }),
+            0..=1 => Err(ProtoError::UnsupportedMessageSetVersion {
+                version: options.version,
+            }),
             2 => Self::encode_new(buf, records, options, compressor),
-            _ => Err(ProtoError::UnknownRecordBatchVersion { version: options.version }),
+            _ => Err(ProtoError::UnknownRecordBatchVersion {
+                version: options.version,
+            }),
         }
     }
 
@@ -283,10 +287,8 @@ impl RecordBatchEncoder {
             + 1;
 
         // Aggregate various record properties in a single pass
-        let (min_offset, max_offset, min_timestamp, max_timestamp) = records
-            .clone()
-            .take(num_records)
-            .fold(
+        let (min_offset, max_offset, min_timestamp, max_timestamp) =
+            records.clone().take(num_records).fold(
                 (i64::MAX, i64::MIN, i64::MAX, i64::MIN),
                 |(min_off, max_off, min_ts, max_ts), r| {
                     (
@@ -466,10 +468,8 @@ impl Iterator for RecordIterator {
 impl RecordIterator {
     fn new(buf: &mut Bytes) -> Result<Self> {
         // try_peek_bytes validates the range; indexing is guaranteed safe.
-        let version =
-            buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
-        let (batch_decode_info, record_buf) =
-            RecordBatchDecoder::decode_batch_info(buf, version)?;
+        let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
+        let (batch_decode_info, record_buf) = RecordBatchDecoder::decode_batch_info(buf, version)?;
 
         Ok(RecordIterator {
             buf: record_buf,
@@ -481,10 +481,9 @@ impl RecordIterator {
 
     fn try_load_next_batch(&mut self) -> Result<()> {
         // try_peek_bytes validates the range; indexing is guaranteed safe.
-        let version = self
-            .source
-            .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0]
-            as i8;
+        let version =
+            self.source
+                .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let (batch_decode_info, record_buf) =
             RecordBatchDecoder::decode_batch_info(&mut self.source, version)?;
         self.buf = record_buf;
@@ -570,7 +569,10 @@ impl RecordBatchDecoder {
         // Batch length
         let batch_length: i32 = types::Int32.decode(buf)?;
         if batch_length < 0 {
-            return Err(ProtoError::NegativeLength { field: "batch size", value: batch_length as i64 });
+            return Err(ProtoError::NegativeLength {
+                field: "batch size",
+                value: batch_length as i64,
+            });
         }
 
         // Convert buf to bytes
@@ -582,7 +584,10 @@ impl RecordBatchDecoder {
         // Magic byte
         let magic: i8 = types::Int8.decode(buf)?;
         if magic != version {
-            return Err(ProtoError::VersionMismatch { expected: version, actual: magic });
+            return Err(ProtoError::VersionMismatch {
+                expected: version,
+                actual: magic,
+            });
         }
 
         // CRC
@@ -590,7 +595,10 @@ impl RecordBatchDecoder {
         let actual_crc = crc32c(buf);
 
         if supplied_crc != actual_crc {
-            return Err(ProtoError::CrcMismatch { expected: actual_crc, actual: supplied_crc });
+            return Err(ProtoError::CrcMismatch {
+                expected: actual_crc,
+                actual: supplied_crc,
+            });
         }
 
         // Attributes
@@ -634,7 +642,10 @@ impl RecordBatchDecoder {
         // Record count
         let record_count: i32 = types::Int32.decode(buf)?;
         if record_count < 0 {
-            return Err(ProtoError::NegativeLength { field: "record count", value: record_count as i64 });
+            return Err(ProtoError::NegativeLength {
+                field: "record count",
+                value: record_count as i64,
+            });
         }
         let record_count = record_count as usize;
 
@@ -745,21 +756,30 @@ impl Record {
         // Timestamp delta
         let timestamp_delta = self.timestamp - min_timestamp;
         if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            return Err(ProtoError::TimestampDeltaOverflow { min: min_timestamp, max: self.timestamp });
+            return Err(ProtoError::TimestampDeltaOverflow {
+                min: min_timestamp,
+                max: self.timestamp,
+            });
         }
         types::VarInt.encode(buf, timestamp_delta as i32)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
-            return Err(ProtoError::OffsetDeltaOverflow { min: min_offset, max: self.offset });
+            return Err(ProtoError::OffsetDeltaOverflow {
+                min: min_offset,
+                max: self.offset,
+            });
         }
         types::VarInt.encode(buf, offset_delta as i32)?;
 
         // Key
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record key", size: k.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record key",
+                    size: k.len(),
+                });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
             buf.put_slice(k);
@@ -770,7 +790,10 @@ impl Record {
         // Value
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record value", size: v.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record value",
+                    size: v.len(),
+                });
             }
             types::VarInt.encode(buf, v.len() as i32)?;
             buf.put_slice(v);
@@ -780,13 +803,19 @@ impl Record {
 
         // Headers
         if self.headers.len() > i32::MAX as usize {
-            return Err(ProtoError::FieldTooLarge { field: "record headers count", size: self.headers.len() });
+            return Err(ProtoError::FieldTooLarge {
+                field: "record headers count",
+                size: self.headers.len(),
+            });
         }
         types::VarInt.encode(buf, self.headers.len() as i32)?;
         for (k, v) in &self.headers {
             // Key len
             if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record header key", size: k.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record header key",
+                    size: k.len(),
+                });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
 
@@ -796,7 +825,10 @@ impl Record {
             // Value
             if let Some(v) = v.as_ref() {
                 if v.len() > i32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge { field: "record header value", size: v.len() });
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "record header value",
+                        size: v.len(),
+                    });
                 }
                 types::VarInt.encode(buf, v.len() as i32)?;
                 buf.put_slice(v);
@@ -821,21 +853,30 @@ impl Record {
         // Timestamp delta
         let timestamp_delta = self.timestamp - min_timestamp;
         if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            return Err(ProtoError::TimestampDeltaOverflow { min: min_timestamp, max: self.timestamp });
+            return Err(ProtoError::TimestampDeltaOverflow {
+                min: min_timestamp,
+                max: self.timestamp,
+            });
         }
         total_size += types::VarInt.compute_size(timestamp_delta as i32)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
-            return Err(ProtoError::OffsetDeltaOverflow { min: min_offset, max: self.offset });
+            return Err(ProtoError::OffsetDeltaOverflow {
+                min: min_offset,
+                max: self.offset,
+            });
         }
         total_size += types::VarInt.compute_size(offset_delta as i32)?;
 
         // Key
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record key", size: k.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record key",
+                    size: k.len(),
+                });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
             total_size += k.len();
@@ -846,7 +887,10 @@ impl Record {
         // Value len
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record value", size: v.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record value",
+                    size: v.len(),
+                });
             }
             total_size += types::VarInt.compute_size(v.len() as i32)?;
             total_size += v.len();
@@ -856,13 +900,19 @@ impl Record {
 
         // Headers
         if self.headers.len() > i32::MAX as usize {
-            return Err(ProtoError::FieldTooLarge { field: "record headers count", size: self.headers.len() });
+            return Err(ProtoError::FieldTooLarge {
+                field: "record headers count",
+                size: self.headers.len(),
+            });
         }
         total_size += types::VarInt.compute_size(self.headers.len() as i32)?;
         for (k, v) in &self.headers {
             // Key len
             if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge { field: "record header key", size: k.len() });
+                return Err(ProtoError::FieldTooLarge {
+                    field: "record header key",
+                    size: k.len(),
+                });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
 
@@ -872,7 +922,10 @@ impl Record {
             // Value
             if let Some(v) = v.as_ref() {
                 if v.len() > i32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge { field: "record header value", size: v.len() });
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "record header value",
+                        size: v.len(),
+                    });
                 }
                 total_size += types::VarInt.compute_size(v.len() as i32)?;
                 total_size += v.len();
@@ -891,7 +944,10 @@ impl Record {
         // Size
         let size: i32 = types::VarInt.decode(buf)?;
         if size < 0 {
-            return Err(ProtoError::NegativeLength { field: "record size", value: size as i64 });
+            return Err(ProtoError::NegativeLength {
+                field: "record size",
+                value: size as i64,
+            });
         }
 
         // Ensure we don't over-read
@@ -913,7 +969,10 @@ impl Record {
         let key_len: i32 = types::VarInt.decode(buf)?;
         let key = match key_len.cmp(&-1) {
             Ordering::Less => {
-                return Err(ProtoError::NegativeLength { field: "record key length", value: key_len as i64 });
+                return Err(ProtoError::NegativeLength {
+                    field: "record key length",
+                    value: key_len as i64,
+                });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(key_len as usize)?),
@@ -923,7 +982,10 @@ impl Record {
         let value_len: i32 = types::VarInt.decode(buf)?;
         let value = match value_len.cmp(&-1) {
             Ordering::Less => {
-                return Err(ProtoError::NegativeLength { field: "record value length", value: value_len as i64 });
+                return Err(ProtoError::NegativeLength {
+                    field: "record value length",
+                    value: value_len as i64,
+                });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
@@ -932,7 +994,10 @@ impl Record {
         // Headers
         let num_headers: i32 = types::VarInt.decode(buf)?;
         if num_headers < 0 {
-            return Err(ProtoError::NegativeLength { field: "record header count", value: num_headers as i64 });
+            return Err(ProtoError::NegativeLength {
+                field: "record header count",
+                value: num_headers as i64,
+            });
         }
         let num_headers = num_headers as usize;
 
@@ -941,7 +1006,10 @@ impl Record {
             // Key len
             let key_len: i32 = types::VarInt.decode(buf)?;
             if key_len < 0 {
-                return Err(ProtoError::NegativeLength { field: "record header key length", value: key_len as i64 });
+                return Err(ProtoError::NegativeLength {
+                    field: "record header key length",
+                    value: key_len as i64,
+                });
             }
 
             // Key
@@ -953,7 +1021,10 @@ impl Record {
             // Value
             let value = match value_len.cmp(&-1) {
                 Ordering::Less => {
-                    return Err(ProtoError::NegativeLength { field: "record header value length", value: value_len as i64 });
+                    return Err(ProtoError::NegativeLength {
+                        field: "record header value length",
+                        value: value_len as i64,
+                    });
                 }
                 Ordering::Equal => None,
                 Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
