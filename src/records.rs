@@ -63,7 +63,7 @@ use crc32c::crc32c;
 use indexmap::IndexMap;
 
 use crate::protocol::{
-    buf::{gap, ByteBuf, ByteBufMut},
+    buf::{gap, ByteBuf, ByteBufMut, TypedGap},
     types, Decoder, Encoder, StrBytes,
 };
 
@@ -130,6 +130,15 @@ pub struct RecordBatchEncoder;
 #[derive(Debug, Clone)]
 /// Batch decoder for Kafka records.
 pub struct RecordBatchDecoder;
+
+struct BatchBounds {
+    num_records: usize,
+    min_offset: i64,
+    max_offset: i64,
+    min_timestamp: i64,
+    max_timestamp: i64,
+    base_sequence: i32,
+}
 
 struct BatchDecodeInfo {
     record_count: usize,
@@ -254,39 +263,28 @@ impl RecordBatchEncoder {
         Ok(())
     }
 
-    fn encode_new_batch<'a, B, I, CF>(
-        buf: &mut B,
-        records: &mut I,
-        options: &RecordEncodeOptions,
-        compressor: Option<&CF>,
-    ) -> Result<bool>
+    /// Compute the number of batch-compatible records and their aggregate
+    /// offset/timestamp bounds. Returns `None` when the iterator is empty.
+    fn compute_batch_bounds<'a, I>(records: &I) -> Option<(&'a Record, BatchBounds)>
     where
-        B: ByteBufMut,
         I: Iterator<Item = &'a Record> + Clone,
-        CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
     {
-        let mut record_peeker = records.clone();
+        let mut peeker = records.clone();
+        let first = peeker.next()?;
 
-        // Get first record
-        let Some(first_record) = record_peeker.next() else {
-            return Ok(false);
-        };
-
-        // Determine how many additional records can be included in the batch
-        let num_records = record_peeker
+        let num_records = peeker
             .take_while(|record| {
-                record.transactional == first_record.transactional
-                    && record.control == first_record.control
-                    && record.partition_leader_epoch == first_record.partition_leader_epoch
-                    && record.producer_id == first_record.producer_id
-                    && record.producer_epoch == first_record.producer_epoch
+                record.transactional == first.transactional
+                    && record.control == first.control
+                    && record.partition_leader_epoch == first.partition_leader_epoch
+                    && record.producer_id == first.producer_id
+                    && record.producer_epoch == first.producer_epoch
                     && (record.offset as i32).wrapping_sub(record.sequence)
-                        == (first_record.offset as i32).wrapping_sub(first_record.sequence)
+                        == (first.offset as i32).wrapping_sub(first.sequence)
             })
             .count()
             + 1;
 
-        // Aggregate various record properties in a single pass
         let (min_offset, max_offset, min_timestamp, max_timestamp) =
             records.clone().take(num_records).fold(
                 (i64::MAX, i64::MIN, i64::MAX, i64::MIN),
@@ -299,28 +297,44 @@ impl RecordBatchEncoder {
                     )
                 },
             );
-        let base_sequence = first_record
+
+        let base_sequence = first
             .sequence
-            .wrapping_sub((first_record.offset - min_offset) as i32);
+            .wrapping_sub((first.offset - min_offset) as i32);
 
-        // Base offset
-        types::Int64.encode(buf, min_offset)?;
+        Some((
+            first,
+            BatchBounds {
+                num_records,
+                min_offset,
+                max_offset,
+                min_timestamp,
+                max_timestamp,
+                base_sequence,
+            },
+        ))
+    }
 
-        // Batch length
+    /// Write the batch header fields (base offset through record count).
+    /// Returns `(size_gap, crc_gap, batch_start, content_start)` so the
+    /// caller can back-fill size and CRC after writing records.
+    fn write_batch_header<B: ByteBufMut>(
+        buf: &mut B,
+        first_record: &Record,
+        bounds: &BatchBounds,
+        options: &RecordEncodeOptions,
+    ) -> Result<(TypedGap<gap::I32>, TypedGap<gap::U32>, usize, usize)> {
+        types::Int64.encode(buf, bounds.min_offset)?;
+
         let size_gap = buf.put_typed_gap(gap::I32);
         let batch_start = buf.offset();
 
-        // Partition leader epoch
         types::Int32.encode(buf, first_record.partition_leader_epoch)?;
-
-        // Magic byte
         types::Int8.encode(buf, options.version)?;
 
-        // CRC
         let crc_gap = buf.put_typed_gap(gap::U32);
         let content_start = buf.offset();
 
-        // Attributes
         let mut attributes = options.compression as i16;
         if first_record.transactional {
             attributes |= 1 << 4;
@@ -330,32 +344,45 @@ impl RecordBatchEncoder {
         }
         types::Int16.encode(buf, attributes)?;
 
-        // Last offset delta
-        types::Int32.encode(buf, (max_offset - min_offset) as i32)?;
-
-        // First timestamp
-        types::Int64.encode(buf, min_timestamp)?;
-
-        // Last timestamp
-        types::Int64.encode(buf, max_timestamp)?;
-
-        // Producer ID
+        types::Int32.encode(buf, (bounds.max_offset - bounds.min_offset) as i32)?;
+        types::Int64.encode(buf, bounds.min_timestamp)?;
+        types::Int64.encode(buf, bounds.max_timestamp)?;
         types::Int64.encode(buf, first_record.producer_id)?;
-
-        // Producer epoch
         types::Int16.encode(buf, first_record.producer_epoch)?;
+        types::Int32.encode(buf, bounds.base_sequence)?;
 
-        // Base sequence
-        types::Int32.encode(buf, base_sequence)?;
-
-        // Record count
-        if num_records > i32::MAX as usize {
-            return Err(ProtoError::TooManyRecords { count: num_records });
+        if bounds.num_records > i32::MAX as usize {
+            return Err(ProtoError::TooManyRecords {
+                count: bounds.num_records,
+            });
         }
-        types::Int32.encode(buf, num_records as i32)?;
+        types::Int32.encode(buf, bounds.num_records as i32)?;
 
-        // Records
-        let records = records.take(num_records);
+        Ok((size_gap, crc_gap, batch_start, content_start))
+    }
+
+    fn encode_new_batch<'a, B, I, CF>(
+        buf: &mut B,
+        records: &mut I,
+        options: &RecordEncodeOptions,
+        compressor: Option<&CF>,
+    ) -> Result<bool>
+    where
+        B: ByteBufMut,
+        I: Iterator<Item = &'a Record> + Clone,
+        CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
+    {
+        let Some((first_record, bounds)) = Self::compute_batch_bounds(records) else {
+            return Ok(false);
+        };
+
+        let (size_gap, crc_gap, batch_start, content_start) =
+            Self::write_batch_header(buf, first_record, &bounds, options)?;
+
+        // Compress and write records
+        let records = records.take(bounds.num_records);
+        let min_offset = bounds.min_offset;
+        let min_timestamp = bounds.min_timestamp;
 
         if let Some(compressor) = compressor {
             let mut record_buf = BytesMut::new();
@@ -395,17 +422,15 @@ impl RecordBatchEncoder {
                 }
             }
         }
-        let batch_end = buf.offset();
 
-        // Fill size gap
+        // Back-fill size and CRC gaps
+        let batch_end = buf.offset();
         let batch_size = batch_end - batch_start;
         if batch_size > i32::MAX as usize {
             return Err(ProtoError::BatchTooLarge { size: batch_size });
         }
-
         buf.fill_typed_gap(size_gap, batch_size as i32);
 
-        // Fill CRC gap
         let crc = crc32c(buf.range(content_start..batch_end));
         buf.fill_typed_gap(crc_gap, crc);
 
@@ -735,6 +760,120 @@ impl RecordBatchDecoder {
     }
 }
 
+/// Encode an optional bytes field with a VarInt length prefix.
+/// Writes the length (or -1 for `None`) followed by the raw bytes.
+fn encode_optional_bytes<B: ByteBufMut>(
+    buf: &mut B,
+    data: Option<&[u8]>,
+    field_name: &'static str,
+) -> Result<()> {
+    if let Some(d) = data {
+        if d.len() > i32::MAX as usize {
+            return Err(ProtoError::FieldTooLarge {
+                field: field_name,
+                size: d.len(),
+            });
+        }
+        types::VarInt.encode(buf, d.len() as i32)?;
+        buf.put_slice(d);
+    } else {
+        types::VarInt.encode(buf, -1)?;
+    }
+    Ok(())
+}
+
+/// Encode the headers map: count followed by key-value pairs.
+fn encode_headers<B: ByteBufMut>(
+    buf: &mut B,
+    headers: &IndexMap<StrBytes, Option<Bytes>>,
+) -> Result<()> {
+    if headers.len() > i32::MAX as usize {
+        return Err(ProtoError::FieldTooLarge {
+            field: "record headers count",
+            size: headers.len(),
+        });
+    }
+    types::VarInt.encode(buf, headers.len() as i32)?;
+    for (k, v) in headers {
+        encode_optional_bytes(buf, Some(k.as_ref()), "record header key")?;
+        encode_optional_bytes(buf, v.as_deref(), "record header value")?;
+    }
+    Ok(())
+}
+
+/// Decode an optional bytes field with a VarInt length prefix.
+fn decode_optional_bytes<B: ByteBuf>(
+    buf: &mut B,
+    field_name: &'static str,
+) -> Result<Option<Bytes>> {
+    let len: i32 = types::VarInt.decode(buf)?;
+    match len.cmp(&-1) {
+        Ordering::Less => Err(ProtoError::NegativeLength {
+            field: field_name,
+            value: len as i64,
+        }),
+        Ordering::Equal => Ok(None),
+        Ordering::Greater => Ok(Some(buf.try_get_bytes(len as usize)?)),
+    }
+}
+
+/// Decode the headers map from a buffer.
+fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<Bytes>>> {
+    let num_headers: i32 = types::VarInt.decode(buf)?;
+    if num_headers < 0 {
+        return Err(ProtoError::NegativeLength {
+            field: "record header count",
+            value: num_headers as i64,
+        });
+    }
+    let num_headers = num_headers as usize;
+    let mut headers = IndexMap::with_capacity(num_headers);
+    for _ in 0..num_headers {
+        let key_len: i32 = types::VarInt.decode(buf)?;
+        if key_len < 0 {
+            return Err(ProtoError::NegativeLength {
+                field: "record header key length",
+                value: key_len as i64,
+            });
+        }
+        let key = StrBytes::try_from(buf.try_get_bytes(key_len as usize)?)?;
+        let value = decode_optional_bytes(buf, "record header value length")?;
+        headers.insert(key, value);
+    }
+    Ok(headers)
+}
+
+/// Compute the encoded size of an optional bytes field.
+fn compute_optional_bytes_size(data: Option<&[u8]>, field_name: &'static str) -> Result<usize> {
+    if let Some(d) = data {
+        if d.len() > i32::MAX as usize {
+            return Err(ProtoError::FieldTooLarge {
+                field: field_name,
+                size: d.len(),
+            });
+        }
+        Ok(types::VarInt.compute_size(d.len() as i32)? + d.len())
+    } else {
+        types::VarInt.compute_size(-1)
+    }
+}
+
+/// Compute the encoded size of the headers map.
+fn compute_headers_size(headers: &IndexMap<StrBytes, Option<Bytes>>) -> Result<usize> {
+    if headers.len() > i32::MAX as usize {
+        return Err(ProtoError::FieldTooLarge {
+            field: "record headers count",
+            size: headers.len(),
+        });
+    }
+    let mut size = types::VarInt.compute_size(headers.len() as i32)?;
+    for (k, v) in headers {
+        size += compute_optional_bytes_size(Some(k.as_ref()), "record header key")?;
+        size += compute_optional_bytes_size(v.as_deref(), "record header value")?;
+    }
+    Ok(size)
+}
+
 impl Record {
     fn encode_new<B: ByteBufMut>(
         &self,
@@ -743,7 +882,6 @@ impl Record {
         min_timestamp: i64,
         options: &RecordEncodeOptions,
     ) -> Result<()> {
-        // Size
         let size = self.compute_size_new(min_offset, min_timestamp, options)?;
         if size > i32::MAX as usize {
             return Err(ProtoError::RecordTooLarge { size });
@@ -773,69 +911,9 @@ impl Record {
         }
         types::VarInt.encode(buf, offset_delta as i32)?;
 
-        // Key
-        if let Some(k) = self.key.as_ref() {
-            if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record key",
-                    size: k.len(),
-                });
-            }
-            types::VarInt.encode(buf, k.len() as i32)?;
-            buf.put_slice(k);
-        } else {
-            types::VarInt.encode(buf, -1)?;
-        }
-
-        // Value
-        if let Some(v) = self.value.as_ref() {
-            if v.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record value",
-                    size: v.len(),
-                });
-            }
-            types::VarInt.encode(buf, v.len() as i32)?;
-            buf.put_slice(v);
-        } else {
-            types::VarInt.encode(buf, -1)?;
-        }
-
-        // Headers
-        if self.headers.len() > i32::MAX as usize {
-            return Err(ProtoError::FieldTooLarge {
-                field: "record headers count",
-                size: self.headers.len(),
-            });
-        }
-        types::VarInt.encode(buf, self.headers.len() as i32)?;
-        for (k, v) in &self.headers {
-            // Key len
-            if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record header key",
-                    size: k.len(),
-                });
-            }
-            types::VarInt.encode(buf, k.len() as i32)?;
-
-            // Key
-            buf.put_slice(k.as_ref());
-
-            // Value
-            if let Some(v) = v.as_ref() {
-                if v.len() > i32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "record header value",
-                        size: v.len(),
-                    });
-                }
-                types::VarInt.encode(buf, v.len() as i32)?;
-                buf.put_slice(v);
-            } else {
-                types::VarInt.encode(buf, -1)?;
-            }
-        }
+        encode_optional_bytes(buf, self.key.as_deref(), "record key")?;
+        encode_optional_bytes(buf, self.value.as_deref(), "record value")?;
+        encode_headers(buf, &self.headers)?;
 
         Ok(())
     }
@@ -870,69 +948,9 @@ impl Record {
         }
         total_size += types::VarInt.compute_size(offset_delta as i32)?;
 
-        // Key
-        if let Some(k) = self.key.as_ref() {
-            if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record key",
-                    size: k.len(),
-                });
-            }
-            total_size += types::VarInt.compute_size(k.len() as i32)?;
-            total_size += k.len();
-        } else {
-            total_size += types::VarInt.compute_size(-1)?;
-        }
-
-        // Value len
-        if let Some(v) = self.value.as_ref() {
-            if v.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record value",
-                    size: v.len(),
-                });
-            }
-            total_size += types::VarInt.compute_size(v.len() as i32)?;
-            total_size += v.len();
-        } else {
-            total_size += types::VarInt.compute_size(-1)?;
-        }
-
-        // Headers
-        if self.headers.len() > i32::MAX as usize {
-            return Err(ProtoError::FieldTooLarge {
-                field: "record headers count",
-                size: self.headers.len(),
-            });
-        }
-        total_size += types::VarInt.compute_size(self.headers.len() as i32)?;
-        for (k, v) in &self.headers {
-            // Key len
-            if k.len() > i32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "record header key",
-                    size: k.len(),
-                });
-            }
-            total_size += types::VarInt.compute_size(k.len() as i32)?;
-
-            // Key
-            total_size += k.len();
-
-            // Value
-            if let Some(v) = v.as_ref() {
-                if v.len() > i32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "record header value",
-                        size: v.len(),
-                    });
-                }
-                total_size += types::VarInt.compute_size(v.len() as i32)?;
-                total_size += v.len();
-            } else {
-                total_size += types::VarInt.compute_size(-1)?;
-            }
-        }
+        total_size += compute_optional_bytes_size(self.key.as_deref(), "record key")?;
+        total_size += compute_optional_bytes_size(self.value.as_deref(), "record value")?;
+        total_size += compute_headers_size(&self.headers)?;
 
         Ok(total_size)
     }
@@ -941,7 +959,6 @@ impl Record {
         batch_decode_info: &BatchDecodeInfo,
         _version: i8,
     ) -> Result<Self> {
-        // Size
         let size: i32 = types::VarInt.decode(buf)?;
         if size < 0 {
             return Err(ProtoError::NegativeLength {
@@ -950,88 +967,20 @@ impl Record {
             });
         }
 
-        // Ensure we don't over-read
         let buf = &mut buf.try_get_bytes(size as usize)?;
 
-        // Attributes
         let _attributes: i8 = types::Int8.decode(buf)?;
 
-        // Timestamp delta
         let timestamp_delta: i32 = types::VarInt.decode(buf)?;
         let timestamp = batch_decode_info.min_timestamp + timestamp_delta as i64;
 
-        // Offset delta
         let offset_delta: i32 = types::VarInt.decode(buf)?;
         let offset = batch_decode_info.min_offset + offset_delta as i64;
         let sequence = batch_decode_info.base_sequence.wrapping_add(offset_delta);
 
-        // Key
-        let key_len: i32 = types::VarInt.decode(buf)?;
-        let key = match key_len.cmp(&-1) {
-            Ordering::Less => {
-                return Err(ProtoError::NegativeLength {
-                    field: "record key length",
-                    value: key_len as i64,
-                });
-            }
-            Ordering::Equal => None,
-            Ordering::Greater => Some(buf.try_get_bytes(key_len as usize)?),
-        };
-
-        // Value
-        let value_len: i32 = types::VarInt.decode(buf)?;
-        let value = match value_len.cmp(&-1) {
-            Ordering::Less => {
-                return Err(ProtoError::NegativeLength {
-                    field: "record value length",
-                    value: value_len as i64,
-                });
-            }
-            Ordering::Equal => None,
-            Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
-        };
-
-        // Headers
-        let num_headers: i32 = types::VarInt.decode(buf)?;
-        if num_headers < 0 {
-            return Err(ProtoError::NegativeLength {
-                field: "record header count",
-                value: num_headers as i64,
-            });
-        }
-        let num_headers = num_headers as usize;
-
-        let mut headers = IndexMap::with_capacity(num_headers);
-        for _ in 0..num_headers {
-            // Key len
-            let key_len: i32 = types::VarInt.decode(buf)?;
-            if key_len < 0 {
-                return Err(ProtoError::NegativeLength {
-                    field: "record header key length",
-                    value: key_len as i64,
-                });
-            }
-
-            // Key
-            let key = StrBytes::try_from(buf.try_get_bytes(key_len as usize)?)?;
-
-            // Key len
-            let value_len: i32 = types::VarInt.decode(buf)?;
-
-            // Value
-            let value = match value_len.cmp(&-1) {
-                Ordering::Less => {
-                    return Err(ProtoError::NegativeLength {
-                        field: "record header value length",
-                        value: value_len as i64,
-                    });
-                }
-                Ordering::Equal => None,
-                Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
-            };
-
-            headers.insert(key, value);
-        }
+        let key = decode_optional_bytes(buf, "record key length")?;
+        let value = decode_optional_bytes(buf, "record value length")?;
+        let headers = decode_headers(buf)?;
 
         Ok(Self {
             transactional: batch_decode_info.transactional,
