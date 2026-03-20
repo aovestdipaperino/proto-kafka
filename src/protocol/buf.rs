@@ -179,6 +179,9 @@ pub trait ByteBufMut: BufMut {
     fn seek(&mut self, offset: usize);
 
     /// Read a range from the buffer.
+    ///
+    /// # Panics
+    /// Panics if the range falls within a `Shared` segment or is out of bounds.
     fn range(&mut self, r: Range<usize>) -> &mut [u8];
 
     /// Store a shared `Bytes` handle without copying.
@@ -298,14 +301,13 @@ impl SegmentedBuf {
 
     /// Ensure the last segment is an `Inline` and return a mutable reference to it.
     fn current_inline(&mut self) -> &mut BytesMut {
-        if self.segments.is_empty()
-            || !matches!(self.segments.last(), Some(Segment::Inline(_)))
-        {
+        if !matches!(self.segments.last(), Some(Segment::Inline(_))) {
             self.segments.push(Segment::Inline(BytesMut::new()));
         }
-        match self.segments.last_mut().unwrap() {
-            Segment::Inline(b) => b,
-            Segment::Shared(_) => unreachable!(),
+        match self.segments.last_mut() {
+            Some(Segment::Inline(b)) => b,
+            // Invariant: we just pushed Inline or confirmed last is Inline above.
+            _ => unreachable!("current_inline: last segment must be Inline after push"),
         }
     }
 
@@ -349,6 +351,10 @@ unsafe impl BufMut for SegmentedBuf {
 
     unsafe fn advance_mut(&mut self, cnt: usize) {
         let inline = self.current_inline();
+        // SAFETY: `current_inline()` ensures the last segment is an Inline(BytesMut).
+        // BytesMut::advance_mut requires that `cnt` bytes have been initialized in
+        // the spare capacity, which is the caller's responsibility per the BufMut
+        // contract. We forward that obligation unchanged.
         unsafe { inline.advance_mut(cnt) };
         self.total_len += cnt;
     }

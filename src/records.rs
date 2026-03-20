@@ -463,6 +463,7 @@ impl Iterator for RecordIterator {
 
 impl RecordIterator {
     fn new(buf: &mut Bytes) -> Result<Self> {
+        // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version =
             buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let (batch_decode_info, record_buf) =
@@ -477,6 +478,7 @@ impl RecordIterator {
     }
 
     fn try_load_next_batch(&mut self) -> Result<()> {
+        // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = self
             .source
             .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0]
@@ -549,6 +551,7 @@ impl RecordBatchDecoder {
     where
         F: Fn(&mut bytes::Bytes, Compression) -> Result<B>,
     {
+        // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let compression = match version {
             0..=1 => bail!("message sets v{version} are unsupported"),
