@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,17 +70,20 @@ impl AddPartitionsToTxnPartitionResult {
 impl Encodable for AddPartitionsToTxnPartitionResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnPartitionResult",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::Int16.encode(buf, &self.partition_error_code)?;
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -95,10 +98,10 @@ impl Encodable for AddPartitionsToTxnPartitionResult {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -112,7 +115,10 @@ impl Encodable for AddPartitionsToTxnPartitionResult {
 impl Decodable for AddPartitionsToTxnPartitionResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnPartitionResult",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let partition_error_code = types::Int16.decode(buf)?;
@@ -233,7 +239,10 @@ impl AddPartitionsToTxnResponse {
 impl Encodable for AddPartitionsToTxnResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         if version >= 4 {
@@ -244,7 +253,10 @@ impl Encodable for AddPartitionsToTxnResponse {
                 .encode(buf, &self.results_by_transaction)?;
         } else {
             if !self.results_by_transaction.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "results_by_transaction",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -257,16 +269,19 @@ impl Encodable for AddPartitionsToTxnResponse {
             }
         } else {
             if !self.results_by_topic_v3_and_below.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "results_by_topic_v3_and_below",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -285,7 +300,10 @@ impl Encodable for AddPartitionsToTxnResponse {
                 .compute_size(&self.results_by_transaction)?;
         } else {
             if !self.results_by_transaction.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "results_by_transaction",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -298,16 +316,19 @@ impl Encodable for AddPartitionsToTxnResponse {
             }
         } else {
             if !self.results_by_topic_v3_and_below.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "results_by_topic_v3_and_below",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -321,7 +342,10 @@ impl Encodable for AddPartitionsToTxnResponse {
 impl Decodable for AddPartitionsToTxnResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let error_code = if version >= 4 {
@@ -433,29 +457,38 @@ impl AddPartitionsToTxnResult {
 impl Encodable for AddPartitionsToTxnResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnResult",
+            });
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.transactional_id)?;
         } else {
             if !self.transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactional_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.topic_results)?;
         } else {
             if !self.topic_results.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_results",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -469,7 +502,10 @@ impl Encodable for AddPartitionsToTxnResult {
             total_size += types::CompactString.compute_size(&self.transactional_id)?;
         } else {
             if !self.transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactional_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
@@ -477,16 +513,19 @@ impl Encodable for AddPartitionsToTxnResult {
                 types::CompactArray(types::Struct { version }).compute_size(&self.topic_results)?;
         } else {
             if !self.topic_results.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_results",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -500,7 +539,10 @@ impl Encodable for AddPartitionsToTxnResult {
 impl Decodable for AddPartitionsToTxnResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnResult",
+            });
         }
         let transactional_id = if version >= 4 {
             types::CompactString.decode(buf)?
@@ -601,7 +643,10 @@ impl AddPartitionsToTxnTopicResult {
 impl Encodable for AddPartitionsToTxnTopicResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTopicResult",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.name)?;
@@ -617,10 +662,10 @@ impl Encodable for AddPartitionsToTxnTopicResult {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -645,10 +690,10 @@ impl Encodable for AddPartitionsToTxnTopicResult {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -662,7 +707,10 @@ impl Encodable for AddPartitionsToTxnTopicResult {
 impl Decodable for AddPartitionsToTxnTopicResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTopicResult",
+            });
         }
         let name = if version >= 3 {
             types::CompactString.decode(buf)?

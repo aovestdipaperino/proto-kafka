@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,16 +70,19 @@ impl ShareGroupDescribeRequest {
 impl Encodable for ShareGroupDescribeRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ShareGroupDescribeRequest",
+            });
         }
         types::CompactArray(types::CompactString).encode(buf, &self.group_ids)?;
         types::Boolean.encode(buf, &self.include_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -92,10 +95,10 @@ impl Encodable for ShareGroupDescribeRequest {
         total_size += types::Boolean.compute_size(&self.include_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -108,7 +111,10 @@ impl Encodable for ShareGroupDescribeRequest {
 impl Decodable for ShareGroupDescribeRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ShareGroupDescribeRequest",
+            });
         }
         let group_ids = types::CompactArray(types::CompactString).decode(buf)?;
         let include_authorized_operations = types::Boolean.decode(buf)?;

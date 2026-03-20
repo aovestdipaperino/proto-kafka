@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl OffsetFetchRequest {
 impl Encodable for OffsetFetchRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequest",
+            });
         }
         if version <= 7 {
             if version >= 6 {
@@ -108,7 +111,10 @@ impl Encodable for OffsetFetchRequest {
             }
         } else {
             if !self.group_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_id",
+                    version,
+                });
             }
         }
         if version <= 7 {
@@ -124,30 +130,39 @@ impl Encodable for OffsetFetchRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 8 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.groups)?;
         } else {
             if !self.groups.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "groups",
+                    version,
+                });
             }
         }
         if version >= 7 {
             types::Boolean.encode(buf, &self.require_stable)?;
         } else {
             if self.require_stable {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "require_stable",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -165,7 +180,10 @@ impl Encodable for OffsetFetchRequest {
             }
         } else {
             if !self.group_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_id",
+                    version,
+                });
             }
         }
         if version <= 7 {
@@ -182,7 +200,10 @@ impl Encodable for OffsetFetchRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 8 {
@@ -190,23 +211,29 @@ impl Encodable for OffsetFetchRequest {
                 types::CompactArray(types::Struct { version }).compute_size(&self.groups)?;
         } else {
             if !self.groups.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "groups",
+                    version,
+                });
             }
         }
         if version >= 7 {
             total_size += types::Boolean.compute_size(&self.require_stable)?;
         } else {
             if self.require_stable {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "require_stable",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -220,7 +247,10 @@ impl Encodable for OffsetFetchRequest {
 impl Decodable for OffsetFetchRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequest",
+            });
         }
         let group_id = if version <= 7 {
             if version >= 6 {
@@ -368,13 +398,19 @@ impl OffsetFetchRequestGroup {
 impl Encodable for OffsetFetchRequestGroup {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestGroup",
+            });
         }
         if version >= 8 {
             types::CompactString.encode(buf, &self.group_id)?;
         } else {
             if !self.group_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_id",
+                    version,
+                });
             }
         }
         if version >= 9 {
@@ -392,16 +428,19 @@ impl Encodable for OffsetFetchRequestGroup {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -415,7 +454,10 @@ impl Encodable for OffsetFetchRequestGroup {
             total_size += types::CompactString.compute_size(&self.group_id)?;
         } else {
             if !self.group_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_id",
+                    version,
+                });
             }
         }
         if version >= 9 {
@@ -434,16 +476,19 @@ impl Encodable for OffsetFetchRequestGroup {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -457,7 +502,10 @@ impl Encodable for OffsetFetchRequestGroup {
 impl Decodable for OffsetFetchRequestGroup {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestGroup",
+            });
         }
         let group_id = if version >= 8 {
             types::CompactString.decode(buf)?
@@ -569,7 +617,10 @@ impl OffsetFetchRequestTopic {
 impl Encodable for OffsetFetchRequestTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestTopic",
+            });
         }
         if version <= 7 {
             if version >= 6 {
@@ -579,7 +630,10 @@ impl Encodable for OffsetFetchRequestTopic {
             }
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version <= 7 {
@@ -590,16 +644,19 @@ impl Encodable for OffsetFetchRequestTopic {
             }
         } else {
             if !self.partition_indexes.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partition_indexes",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -617,7 +674,10 @@ impl Encodable for OffsetFetchRequestTopic {
             }
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version <= 7 {
@@ -629,16 +689,19 @@ impl Encodable for OffsetFetchRequestTopic {
             }
         } else {
             if !self.partition_indexes.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partition_indexes",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -652,7 +715,10 @@ impl Encodable for OffsetFetchRequestTopic {
 impl Decodable for OffsetFetchRequestTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestTopic",
+            });
         }
         let name = if version <= 7 {
             if version >= 6 {
@@ -772,7 +838,10 @@ impl OffsetFetchRequestTopics {
 impl Encodable for OffsetFetchRequestTopics {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestTopics",
+            });
         }
         if version >= 8 {
             types::CompactString.encode(buf, &self.name)?;
@@ -781,16 +850,19 @@ impl Encodable for OffsetFetchRequestTopics {
             types::CompactArray(types::Int32).encode(buf, &self.partition_indexes)?;
         } else {
             if !self.partition_indexes.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partition_indexes",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -808,16 +880,19 @@ impl Encodable for OffsetFetchRequestTopics {
                 types::CompactArray(types::Int32).compute_size(&self.partition_indexes)?;
         } else {
             if !self.partition_indexes.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partition_indexes",
+                    version,
+                });
             }
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -831,7 +906,10 @@ impl Encodable for OffsetFetchRequestTopics {
 impl Decodable for OffsetFetchRequestTopics {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetFetchRequestTopics",
+            });
         }
         let name = if version >= 8 {
             types::CompactString.decode(buf)?

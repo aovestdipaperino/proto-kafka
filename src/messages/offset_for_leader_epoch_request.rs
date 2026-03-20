@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,7 +70,10 @@ impl OffsetForLeaderEpochRequest {
 impl Encodable for OffsetForLeaderEpochRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderEpochRequest",
+            });
         }
         if version >= 3 {
             types::Int32.encode(buf, &self.replica_id)?;
@@ -83,10 +86,10 @@ impl Encodable for OffsetForLeaderEpochRequest {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -108,10 +111,10 @@ impl Encodable for OffsetForLeaderEpochRequest {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -125,7 +128,10 @@ impl Encodable for OffsetForLeaderEpochRequest {
 impl Decodable for OffsetForLeaderEpochRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderEpochRequest",
+            });
         }
         let replica_id = if version >= 3 {
             types::Int32.decode(buf)?
@@ -237,7 +243,10 @@ impl OffsetForLeaderPartition {
 impl Encodable for OffsetForLeaderPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderPartition",
+            });
         }
         types::Int32.encode(buf, &self.partition)?;
         types::Int32.encode(buf, &self.current_leader_epoch)?;
@@ -245,10 +254,10 @@ impl Encodable for OffsetForLeaderPartition {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -264,10 +273,10 @@ impl Encodable for OffsetForLeaderPartition {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -281,7 +290,10 @@ impl Encodable for OffsetForLeaderPartition {
 impl Decodable for OffsetForLeaderPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderPartition",
+            });
         }
         let partition = types::Int32.decode(buf)?;
         let current_leader_epoch = types::Int32.decode(buf)?;
@@ -374,7 +386,10 @@ impl OffsetForLeaderTopic {
 impl Encodable for OffsetForLeaderTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderTopic",
+            });
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.topic)?;
@@ -389,10 +404,10 @@ impl Encodable for OffsetForLeaderTopic {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -416,10 +431,10 @@ impl Encodable for OffsetForLeaderTopic {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -433,7 +448,10 @@ impl Encodable for OffsetForLeaderTopic {
 impl Decodable for OffsetForLeaderTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetForLeaderTopic",
+            });
         }
         let topic = if version >= 4 {
             types::CompactString.decode(buf)?

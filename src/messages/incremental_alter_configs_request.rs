@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,7 +84,10 @@ impl AlterConfigsResource {
 impl Encodable for AlterConfigsResource {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterConfigsResource",
+            });
         }
         types::Int8.encode(buf, &self.resource_type)?;
         if version >= 1 {
@@ -100,10 +103,10 @@ impl Encodable for AlterConfigsResource {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -128,10 +131,10 @@ impl Encodable for AlterConfigsResource {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -145,7 +148,10 @@ impl Encodable for AlterConfigsResource {
 impl Decodable for AlterConfigsResource {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterConfigsResource",
+            });
         }
         let resource_type = types::Int8.decode(buf)?;
         let resource_name = if version >= 1 {
@@ -260,7 +266,10 @@ impl AlterableConfig {
 impl Encodable for AlterableConfig {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterableConfig",
+            });
         }
         if version >= 1 {
             types::CompactString.encode(buf, &self.name)?;
@@ -276,10 +285,10 @@ impl Encodable for AlterableConfig {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -303,10 +312,10 @@ impl Encodable for AlterableConfig {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -320,7 +329,10 @@ impl Encodable for AlterableConfig {
 impl Decodable for AlterableConfig {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterableConfig",
+            });
         }
         let name = if version >= 1 {
             types::CompactString.decode(buf)?
@@ -421,7 +433,10 @@ impl IncrementalAlterConfigsRequest {
 impl Encodable for IncrementalAlterConfigsRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "IncrementalAlterConfigsRequest",
+            });
         }
         if version >= 1 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.resources)?;
@@ -432,10 +447,10 @@ impl Encodable for IncrementalAlterConfigsRequest {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -455,10 +470,10 @@ impl Encodable for IncrementalAlterConfigsRequest {
         if version >= 1 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -472,7 +487,10 @@ impl Encodable for IncrementalAlterConfigsRequest {
 impl Decodable for IncrementalAlterConfigsRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "IncrementalAlterConfigsRequest",
+            });
         }
         let resources = if version >= 1 {
             types::CompactArray(types::Struct { version }).decode(buf)?

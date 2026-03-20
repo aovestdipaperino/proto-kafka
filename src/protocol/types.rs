@@ -17,8 +17,8 @@
     clippy::missing_errors_doc
 )]
 use super::{Decodable, Decoder, Encodable, Encoder, NewType, StrBytes};
+use crate::error::{ProtoError, Result};
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use anyhow::{bail, Result};
 use std::convert::TryFrom;
 use std::string::String as StdString;
 
@@ -279,7 +279,10 @@ impl Encoder<Option<&str>> for String {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&str>) -> Result<()> {
         if let Some(s) = value {
             if s.len() > i16::MAX as usize {
-                bail!("String is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "String",
+                    size: s.len(),
+                })
             } else {
                 Int16.encode(buf, s.len() as i16)?;
                 buf.put_slice(s.as_bytes());
@@ -293,7 +296,10 @@ impl Encoder<Option<&str>> for String {
     fn compute_size(&self, value: Option<&str>) -> Result<usize> {
         if let Some(s) = value {
             if s.len() > i16::MAX as usize {
-                bail!("String is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "String",
+                    size: s.len(),
+                })
             } else {
                 Ok(2 + s.len())
             }
@@ -376,7 +382,10 @@ impl Decoder<Option<StdString>> for String {
                 Ok(Some(std::string::String::from_utf8(strbuf)?))
             }
             n => {
-                bail!("String length is negative ({n})");
+                Err(ProtoError::NegativeLength {
+                    field: "string length",
+                    value: n as i64,
+                })
             }
         }
     }
@@ -391,7 +400,10 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
                 Ok(Some(strbuf.into()))
             }
             n => {
-                bail!("String length is negative ({n})");
+                Err(ProtoError::NegativeLength {
+                    field: "string length",
+                    value: n as i64,
+                })
             }
         }
     }
@@ -401,7 +413,10 @@ impl Decoder<StdString> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<StdString> {
         match String.decode(buf) {
             Ok(None) => {
-                bail!("String length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "string length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -413,7 +428,10 @@ impl<T: NewType<StrBytes>> Decoder<T> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         match String.decode(buf) {
             Ok(None) => {
-                bail!("String length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "string length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -430,7 +448,10 @@ impl Encoder<Option<&str>> for CompactString {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
             if s.len() >= u32::MAX as usize {
-                bail!("CompactString is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactString",
+                    size: s.len(),
+                })
             } else {
                 UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
                 buf.put_slice(s.as_bytes());
@@ -445,7 +466,10 @@ impl Encoder<Option<&str>> for CompactString {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
             if s.len() >= u32::MAX as usize {
-                bail!("CompactString is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactString",
+                    size: s.len(),
+                })
             } else {
                 Ok(UnsignedVarInt.compute_size((s.len() as u32) + 1)? + s.len())
             }
@@ -547,7 +571,10 @@ impl Decoder<StdString> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<StdString> {
         match CompactString.decode(buf) {
             Ok(None) => {
-                bail!("CompactString length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "compact string length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -559,7 +586,10 @@ impl<T: NewType<StrBytes>> Decoder<T> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         match CompactString.decode(buf) {
             Ok(None) => {
-                bail!("CompactString length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "compact string length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -575,7 +605,10 @@ impl Encoder<Option<&[u8]>> for Bytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&[u8]>) -> Result<()> {
         if let Some(s) = value {
             if s.len() > i32::MAX as usize {
-                bail!("Data is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "Bytes",
+                    size: s.len(),
+                })
             } else {
                 Int32.encode(buf, s.len() as i32)?;
                 buf.put_slice(s);
@@ -589,7 +622,10 @@ impl Encoder<Option<&[u8]>> for Bytes {
     fn compute_size(&self, value: Option<&[u8]>) -> Result<usize> {
         if let Some(s) = value {
             if s.len() > i32::MAX as usize {
-                bail!("Data is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "Bytes",
+                    size: s.len(),
+                })
             } else {
                 Ok(4 + s.len())
             }
@@ -621,7 +657,10 @@ impl Encoder<Option<&bytes::Bytes>> for Bytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&bytes::Bytes>) -> Result<()> {
         if let Some(s) = value {
             if s.len() > i32::MAX as usize {
-                bail!("Data is too long to encode ({} bytes)", s.len());
+                return Err(ProtoError::TypeTooLong {
+                    type_name: "Bytes",
+                    size: s.len(),
+                });
             }
             Int32.encode(buf, s.len() as i32)?;
             buf.put_shared_bytes(s.clone());
@@ -682,7 +721,10 @@ impl Decoder<Option<Vec<u8>>> for Bytes {
                 Ok(Some(data))
             }
             n => {
-                bail!("Data length is negative ({n})");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: n as i64,
+                })
             }
         }
     }
@@ -694,7 +736,10 @@ impl Decoder<Option<bytes::Bytes>> for Bytes {
             -1 => Ok(None),
             n if n >= 0 => Ok(Some(buf.try_get_bytes(n as usize)?)),
             n => {
-                bail!("Data length is negative ({n})");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: n as i64,
+                })
             }
         }
     }
@@ -704,7 +749,10 @@ impl Decoder<Vec<u8>> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<u8>> {
         match Bytes.decode(buf) {
             Ok(None) => {
-                bail!("Data length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -716,7 +764,10 @@ impl Decoder<bytes::Bytes> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<bytes::Bytes> {
         match Bytes.decode(buf) {
             Ok(None) => {
-                bail!("Data length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -733,7 +784,10 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
             if s.len() >= u32::MAX as usize {
-                bail!("CompactBytes is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactBytes",
+                    size: s.len(),
+                })
             } else {
                 UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
                 buf.put_slice(s);
@@ -748,7 +802,10 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
             if s.len() >= u32::MAX as usize {
-                bail!("CompactBytes is too long to encode ({} bytes)", s.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactBytes",
+                    size: s.len(),
+                })
             } else {
                 Ok(UnsignedVarInt.compute_size((s.len() as u32) + 1)? + s.len())
             }
@@ -780,7 +837,10 @@ impl Encoder<Option<&bytes::Bytes>> for CompactBytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&bytes::Bytes>) -> Result<()> {
         if let Some(s) = value {
             if s.len() >= u32::MAX as usize {
-                bail!("CompactBytes is too long to encode ({} bytes)", s.len());
+                return Err(ProtoError::TypeTooLong {
+                    type_name: "CompactBytes",
+                    size: s.len(),
+                });
             }
             UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
             buf.put_shared_bytes(s.clone());
@@ -857,7 +917,10 @@ impl Decoder<Vec<u8>> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<u8>> {
         match CompactBytes.decode(buf) {
             Ok(None) => {
-                bail!("Data length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -869,7 +932,10 @@ impl Decoder<bytes::Bytes> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<bytes::Bytes> {
         match CompactBytes.decode(buf) {
             Ok(None) => {
-                bail!("Data length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "data length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -944,7 +1010,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for Array<E> {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&[T]>) -> Result<()> {
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
-                bail!("Array is too long to encode ({} items)", a.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "Array",
+                    size: a.len(),
+                })
             } else {
                 Int32.encode(buf, a.len() as i32)?;
                 for item in a {
@@ -960,7 +1029,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for Array<E> {
     fn compute_size(&self, value: Option<&[T]>) -> Result<usize> {
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
-                bail!("Array is too long to encode ({} items)", a.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "Array",
+                    size: a.len(),
+                })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(4 + a.len() * fixed_size)
             } else {
@@ -1024,7 +1096,10 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
                 Ok(Some(result))
             }
             n => {
-                bail!("Array length is negative ({n})");
+                Err(ProtoError::NegativeLength {
+                    field: "array length",
+                    value: n as i64,
+                })
             }
         }
     }
@@ -1034,7 +1109,10 @@ impl<T, E: Decoder<T>> Decoder<Vec<T>> for Array<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<T>> {
         match self.decode(buf) {
             Ok(None) => {
-                bail!("Array length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "array length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -1051,7 +1129,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
             if a.len() >= u32::MAX as usize {
-                bail!("CompactArray is too long to encode ({} items)", a.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactArray",
+                    size: a.len(),
+                })
             } else {
                 UnsignedVarInt.encode(buf, (a.len() as u32) + 1)?;
                 for item in a {
@@ -1068,7 +1149,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
             if a.len() >= u32::MAX as usize {
-                bail!("CompactArray is too long to encode ({} items)", a.len());
+                Err(ProtoError::TypeTooLong {
+                    type_name: "CompactArray",
+                    size: a.len(),
+                })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(UnsignedVarInt.compute_size((a.len() as u32) + 1)? + a.len() * fixed_size)
             } else {
@@ -1139,7 +1223,10 @@ impl<T, E: Decoder<T>> Decoder<Vec<T>> for CompactArray<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<T>> {
         match self.decode(buf) {
             Ok(None) => {
-                bail!("CompactArray length is negative (-1)");
+                Err(ProtoError::NegativeLength {
+                    field: "compact array length",
+                    value: -1,
+                })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),

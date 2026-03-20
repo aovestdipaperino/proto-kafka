@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,29 +70,38 @@ impl DeleteTopicState {
 impl Encodable for DeleteTopicState {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DeleteTopicState",
+            });
         }
         if version >= 6 {
             types::CompactString.encode(buf, &self.name)?;
         } else {
             if !self.name.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 6 {
             types::Uuid.encode(buf, &self.topic_id)?;
         } else {
             if &self.topic_id != &Uuid::nil() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -106,23 +115,29 @@ impl Encodable for DeleteTopicState {
             total_size += types::CompactString.compute_size(&self.name)?;
         } else {
             if !self.name.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 6 {
             total_size += types::Uuid.compute_size(&self.topic_id)?;
         } else {
             if &self.topic_id != &Uuid::nil() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -136,7 +151,10 @@ impl Encodable for DeleteTopicState {
 impl Decodable for DeleteTopicState {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DeleteTopicState",
+            });
         }
         let name = if version >= 6 {
             types::CompactString.decode(buf)?
@@ -248,13 +266,19 @@ impl DeleteTopicsRequest {
 impl Encodable for DeleteTopicsRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DeleteTopicsRequest",
+            });
         }
         if version >= 6 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         } else {
             if !self.topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version <= 5 {
@@ -268,10 +292,10 @@ impl Encodable for DeleteTopicsRequest {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -286,7 +310,10 @@ impl Encodable for DeleteTopicsRequest {
                 types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         } else {
             if !self.topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version <= 5 {
@@ -301,10 +328,10 @@ impl Encodable for DeleteTopicsRequest {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -318,7 +345,10 @@ impl Encodable for DeleteTopicsRequest {
 impl Decodable for DeleteTopicsRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DeleteTopicsRequest",
+            });
         }
         let topics = if version >= 6 {
             types::CompactArray(types::Struct { version }).decode(buf)?

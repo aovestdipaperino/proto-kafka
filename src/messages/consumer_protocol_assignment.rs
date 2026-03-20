@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -56,7 +56,10 @@ impl ConsumerProtocolAssignment {
 impl Encodable for ConsumerProtocolAssignment {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerProtocolAssignment",
+            });
         }
         types::Array(types::Struct { version }).encode(buf, &self.assigned_partitions)?;
         types::Bytes.encode(buf, &self.user_data)?;
@@ -76,7 +79,10 @@ impl Encodable for ConsumerProtocolAssignment {
 impl Decodable for ConsumerProtocolAssignment {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerProtocolAssignment",
+            });
         }
         let assigned_partitions = types::Array(types::Struct { version }).decode(buf)?;
         let user_data = types::Bytes.decode(buf)?;
@@ -140,7 +146,10 @@ impl TopicPartition {
 impl Encodable for TopicPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartition",
+            });
         }
         types::String.encode(buf, &self.topic)?;
         types::Array(types::Int32).encode(buf, &self.partitions)?;
@@ -159,7 +168,10 @@ impl Encodable for TopicPartition {
 impl Decodable for TopicPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartition",
+            });
         }
         let topic = types::String.decode(buf)?;
         let partitions = types::Array(types::Int32).decode(buf)?;

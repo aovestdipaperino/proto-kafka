@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -126,7 +126,10 @@ impl PartitionResult {
 impl Encodable for PartitionResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "PartitionResult",
+            });
         }
         types::Int32.encode(buf, &self.partition)?;
         types::Int16.encode(buf, &self.error_code)?;
@@ -136,10 +139,10 @@ impl Encodable for PartitionResult {
         types::CompactArray(types::Struct { version }).encode(buf, &self.state_batches)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -157,10 +160,10 @@ impl Encodable for PartitionResult {
             types::CompactArray(types::Struct { version }).compute_size(&self.state_batches)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -173,7 +176,10 @@ impl Encodable for PartitionResult {
 impl Decodable for PartitionResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "PartitionResult",
+            });
         }
         let partition = types::Int32.decode(buf)?;
         let error_code = types::Int16.decode(buf)?;
@@ -259,15 +265,18 @@ impl ReadShareGroupStateResponse {
 impl Encodable for ReadShareGroupStateResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ReadShareGroupStateResponse",
+            });
         }
         types::CompactArray(types::Struct { version }).encode(buf, &self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -279,10 +288,10 @@ impl Encodable for ReadShareGroupStateResponse {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -295,7 +304,10 @@ impl Encodable for ReadShareGroupStateResponse {
 impl Decodable for ReadShareGroupStateResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ReadShareGroupStateResponse",
+            });
         }
         let results = types::CompactArray(types::Struct { version }).decode(buf)?;
         let mut unknown_tagged_fields = BTreeMap::new();
@@ -380,16 +392,19 @@ impl ReadStateResult {
 impl Encodable for ReadStateResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ReadStateResult",
+            });
         }
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -403,10 +418,10 @@ impl Encodable for ReadStateResult {
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -419,7 +434,10 @@ impl Encodable for ReadStateResult {
 impl Decodable for ReadStateResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ReadStateResult",
+            });
         }
         let topic_id = types::Uuid.decode(buf)?;
         let partitions = types::CompactArray(types::Struct { version }).decode(buf)?;
@@ -535,7 +553,10 @@ impl StateBatch {
 impl Encodable for StateBatch {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "StateBatch",
+            });
         }
         types::Int64.encode(buf, &self.first_offset)?;
         types::Int64.encode(buf, &self.last_offset)?;
@@ -543,10 +564,10 @@ impl Encodable for StateBatch {
         types::Int16.encode(buf, &self.delivery_count)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -561,10 +582,10 @@ impl Encodable for StateBatch {
         total_size += types::Int16.compute_size(&self.delivery_count)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -577,7 +598,10 @@ impl Encodable for StateBatch {
 impl Decodable for StateBatch {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "StateBatch",
+            });
         }
         let first_offset = types::Int64.decode(buf)?;
         let last_offset = types::Int64.decode(buf)?;

@@ -1,7 +1,7 @@
 use std::{net::TcpStream, time::Duration};
 
 use bytes::{Bytes, BytesMut};
-use kafka_protocol::{
+use proto_kafka::{
     messages::{
         create_topics_request::CreatableTopic,
         fetch_request::{FetchPartition, FetchTopic},
@@ -213,7 +213,7 @@ fn compress_record_batch_data(
     src: &mut bytes::BytesMut,
     dest: &mut BytesMut,
     compression: Compression,
-) -> anyhow::Result<()> {
+) -> proto_kafka::error::Result<()> {
     match compression {
         Compression::None => {
             dest.extend_from_slice(src.as_ref());

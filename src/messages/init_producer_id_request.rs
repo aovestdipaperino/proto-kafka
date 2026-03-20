@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -126,7 +126,10 @@ impl InitProducerIdRequest {
 impl Encodable for InitProducerIdRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "InitProducerIdRequest",
+            });
         }
         if version >= 2 {
             types::CompactString.encode(buf, &self.transactional_id)?;
@@ -138,23 +141,29 @@ impl Encodable for InitProducerIdRequest {
             types::Int64.encode(buf, &self.producer_id)?;
         } else {
             if self.producer_id != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int16.encode(buf, &self.producer_epoch)?;
         } else {
             if self.producer_epoch != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_epoch",
+                    version,
+                });
             }
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -174,23 +183,29 @@ impl Encodable for InitProducerIdRequest {
             total_size += types::Int64.compute_size(&self.producer_id)?;
         } else {
             if self.producer_id != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int16.compute_size(&self.producer_epoch)?;
         } else {
             if self.producer_epoch != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_epoch",
+                    version,
+                });
             }
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -204,7 +219,10 @@ impl Encodable for InitProducerIdRequest {
 impl Decodable for InitProducerIdRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "InitProducerIdRequest",
+            });
         }
         let transactional_id = if version >= 2 {
             types::CompactString.decode(buf)?

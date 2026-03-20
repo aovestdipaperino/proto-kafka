@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,16 +70,19 @@ impl DescribeShareGroupOffsetsResponse {
 impl Encodable for DescribeShareGroupOffsetsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.groups)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -92,10 +95,10 @@ impl Encodable for DescribeShareGroupOffsetsResponse {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.groups)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -108,7 +111,10 @@ impl Encodable for DescribeShareGroupOffsetsResponse {
 impl Decodable for DescribeShareGroupOffsetsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let groups = types::CompactArray(types::Struct { version }).decode(buf)?;
@@ -224,7 +230,10 @@ impl DescribeShareGroupOffsetsResponseGroup {
 impl Encodable for DescribeShareGroupOffsetsResponseGroup {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponseGroup",
+            });
         }
         types::CompactString.encode(buf, &self.group_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
@@ -232,10 +241,10 @@ impl Encodable for DescribeShareGroupOffsetsResponseGroup {
         types::CompactString.encode(buf, &self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -250,10 +259,10 @@ impl Encodable for DescribeShareGroupOffsetsResponseGroup {
         total_size += types::CompactString.compute_size(&self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -266,7 +275,10 @@ impl Encodable for DescribeShareGroupOffsetsResponseGroup {
 impl Decodable for DescribeShareGroupOffsetsResponseGroup {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponseGroup",
+            });
         }
         let group_id = types::CompactString.decode(buf)?;
         let topics = types::CompactArray(types::Struct { version }).decode(buf)?;
@@ -402,7 +414,10 @@ impl DescribeShareGroupOffsetsResponsePartition {
 impl Encodable for DescribeShareGroupOffsetsResponsePartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponsePartition",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::Int64.encode(buf, &self.start_offset)?;
@@ -411,10 +426,10 @@ impl Encodable for DescribeShareGroupOffsetsResponsePartition {
         types::CompactString.encode(buf, &self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -430,10 +445,10 @@ impl Encodable for DescribeShareGroupOffsetsResponsePartition {
         total_size += types::CompactString.compute_size(&self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -446,7 +461,10 @@ impl Encodable for DescribeShareGroupOffsetsResponsePartition {
 impl Decodable for DescribeShareGroupOffsetsResponsePartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponsePartition",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let start_offset = types::Int64.decode(buf)?;
@@ -560,17 +578,20 @@ impl DescribeShareGroupOffsetsResponseTopic {
 impl Encodable for DescribeShareGroupOffsetsResponseTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponseTopic",
+            });
         }
         types::CompactString.encode(buf, &self.topic_name)?;
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -585,10 +606,10 @@ impl Encodable for DescribeShareGroupOffsetsResponseTopic {
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -601,7 +622,10 @@ impl Encodable for DescribeShareGroupOffsetsResponseTopic {
 impl Decodable for DescribeShareGroupOffsetsResponseTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeShareGroupOffsetsResponseTopic",
+            });
         }
         let topic_name = types::CompactString.decode(buf)?;
         let topic_id = types::Uuid.decode(buf)?;

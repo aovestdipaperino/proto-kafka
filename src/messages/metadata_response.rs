@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -140,7 +140,10 @@ impl MetadataResponse {
 impl Encodable for MetadataResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponse",
+            });
         }
         if version >= 3 {
             types::Int32.encode(buf, &self.throttle_time_ms)?;
@@ -169,7 +172,10 @@ impl Encodable for MetadataResponse {
             types::Int32.encode(buf, &self.cluster_authorized_operations)?;
         } else {
             if self.cluster_authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "cluster_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 13 {
@@ -178,10 +184,10 @@ impl Encodable for MetadataResponse {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -220,7 +226,10 @@ impl Encodable for MetadataResponse {
             total_size += types::Int32.compute_size(&self.cluster_authorized_operations)?;
         } else {
             if self.cluster_authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "cluster_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 13 {
@@ -229,10 +238,10 @@ impl Encodable for MetadataResponse {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -246,7 +255,10 @@ impl Encodable for MetadataResponse {
 impl Decodable for MetadataResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponse",
+            });
         }
         let throttle_time_ms = if version >= 3 {
             types::Int32.decode(buf)?
@@ -411,7 +423,10 @@ impl MetadataResponseBroker {
 impl Encodable for MetadataResponseBroker {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponseBroker",
+            });
         }
         types::Int32.encode(buf, &self.node_id)?;
         if version >= 9 {
@@ -430,10 +445,10 @@ impl Encodable for MetadataResponseBroker {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -460,10 +475,10 @@ impl Encodable for MetadataResponseBroker {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -477,7 +492,10 @@ impl Encodable for MetadataResponseBroker {
 impl Decodable for MetadataResponseBroker {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponseBroker",
+            });
         }
         let node_id = types::Int32.decode(buf)?;
         let host = if version >= 9 {
@@ -655,7 +673,10 @@ impl MetadataResponsePartition {
 impl Encodable for MetadataResponsePartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponsePartition",
+            });
         }
         types::Int16.encode(buf, &self.error_code)?;
         types::Int32.encode(buf, &self.partition_index)?;
@@ -683,10 +704,10 @@ impl Encodable for MetadataResponsePartition {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -723,10 +744,10 @@ impl Encodable for MetadataResponsePartition {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -740,7 +761,10 @@ impl Encodable for MetadataResponsePartition {
 impl Decodable for MetadataResponsePartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponsePartition",
+            });
         }
         let error_code = types::Int16.decode(buf)?;
         let partition_index = types::Int32.decode(buf)?;
@@ -921,7 +945,10 @@ impl MetadataResponseTopic {
 impl Encodable for MetadataResponseTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponseTopic",
+            });
         }
         types::Int16.encode(buf, &self.error_code)?;
         if version >= 9 {
@@ -944,16 +971,19 @@ impl Encodable for MetadataResponseTopic {
             types::Int32.encode(buf, &self.topic_authorized_operations)?;
         } else {
             if self.topic_authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -985,16 +1015,19 @@ impl Encodable for MetadataResponseTopic {
             total_size += types::Int32.compute_size(&self.topic_authorized_operations)?;
         } else {
             if self.topic_authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -1008,7 +1041,10 @@ impl Encodable for MetadataResponseTopic {
 impl Decodable for MetadataResponseTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataResponseTopic",
+            });
         }
         let error_code = types::Int16.decode(buf)?;
         let name = if version >= 9 {

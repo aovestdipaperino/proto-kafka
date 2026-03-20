@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl FeatureUpdateKey {
 impl Encodable for FeatureUpdateKey {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FeatureUpdateKey",
+            });
         }
         types::CompactString.encode(buf, &self.feature)?;
         types::Int16.encode(buf, &self.max_version_level)?;
@@ -106,22 +109,28 @@ impl Encodable for FeatureUpdateKey {
             types::Boolean.encode(buf, &self.allow_downgrade)?;
         } else {
             if self.allow_downgrade {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "allow_downgrade",
+                    version,
+                });
             }
         }
         if version >= 1 {
             types::Int8.encode(buf, &self.upgrade_type)?;
         } else {
             if self.upgrade_type != 1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "upgrade_type",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -136,22 +145,28 @@ impl Encodable for FeatureUpdateKey {
             total_size += types::Boolean.compute_size(&self.allow_downgrade)?;
         } else {
             if self.allow_downgrade {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "allow_downgrade",
+                    version,
+                });
             }
         }
         if version >= 1 {
             total_size += types::Int8.compute_size(&self.upgrade_type)?;
         } else {
             if self.upgrade_type != 1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "upgrade_type",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -164,7 +179,10 @@ impl Encodable for FeatureUpdateKey {
 impl Decodable for FeatureUpdateKey {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FeatureUpdateKey",
+            });
         }
         let feature = types::CompactString.decode(buf)?;
         let max_version_level = types::Int16.decode(buf)?;
@@ -280,7 +298,10 @@ impl UpdateFeaturesRequest {
 impl Encodable for UpdateFeaturesRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "UpdateFeaturesRequest",
+            });
         }
         types::Int32.encode(buf, &self.timeout_ms)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.feature_updates)?;
@@ -288,15 +309,18 @@ impl Encodable for UpdateFeaturesRequest {
             types::Boolean.encode(buf, &self.validate_only)?;
         } else {
             if self.validate_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "validate_only",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -312,15 +336,18 @@ impl Encodable for UpdateFeaturesRequest {
             total_size += types::Boolean.compute_size(&self.validate_only)?;
         } else {
             if self.validate_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "validate_only",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -333,7 +360,10 @@ impl Encodable for UpdateFeaturesRequest {
 impl Decodable for UpdateFeaturesRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "UpdateFeaturesRequest",
+            });
         }
         let timeout_ms = types::Int32.decode(buf)?;
         let feature_updates = types::CompactArray(types::Struct { version }).decode(buf)?;

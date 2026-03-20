@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl ListPartitionReassignmentsResponse {
 impl Encodable for ListPartitionReassignmentsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListPartitionReassignmentsResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::Int16.encode(buf, &self.error_code)?;
@@ -106,10 +109,10 @@ impl Encodable for ListPartitionReassignmentsResponse {
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -124,10 +127,10 @@ impl Encodable for ListPartitionReassignmentsResponse {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -140,7 +143,10 @@ impl Encodable for ListPartitionReassignmentsResponse {
 impl Decodable for ListPartitionReassignmentsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListPartitionReassignmentsResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let error_code = types::Int16.decode(buf)?;
@@ -262,7 +268,10 @@ impl OngoingPartitionReassignment {
 impl Encodable for OngoingPartitionReassignment {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OngoingPartitionReassignment",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::CompactArray(types::Int32).encode(buf, &self.replicas)?;
@@ -270,10 +279,10 @@ impl Encodable for OngoingPartitionReassignment {
         types::CompactArray(types::Int32).encode(buf, &self.removing_replicas)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -288,10 +297,10 @@ impl Encodable for OngoingPartitionReassignment {
         total_size += types::CompactArray(types::Int32).compute_size(&self.removing_replicas)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -304,7 +313,10 @@ impl Encodable for OngoingPartitionReassignment {
 impl Decodable for OngoingPartitionReassignment {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OngoingPartitionReassignment",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let replicas = types::CompactArray(types::Int32).decode(buf)?;
@@ -398,16 +410,19 @@ impl OngoingTopicReassignment {
 impl Encodable for OngoingTopicReassignment {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OngoingTopicReassignment",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -421,10 +436,10 @@ impl Encodable for OngoingTopicReassignment {
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -437,7 +452,10 @@ impl Encodable for OngoingTopicReassignment {
 impl Decodable for OngoingTopicReassignment {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OngoingTopicReassignment",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let partitions = types::CompactArray(types::Struct { version }).decode(buf)?;

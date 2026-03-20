@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl MetadataRequest {
 impl Encodable for MetadataRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataRequest",
+            });
         }
         if version >= 9 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
@@ -109,30 +112,39 @@ impl Encodable for MetadataRequest {
             types::Boolean.encode(buf, &self.allow_auto_topic_creation)?;
         } else {
             if !self.allow_auto_topic_creation {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "allow_auto_topic_creation",
+                    version,
+                });
             }
         }
         if version >= 8 && version <= 10 {
             types::Boolean.encode(buf, &self.include_cluster_authorized_operations)?;
         } else {
             if self.include_cluster_authorized_operations {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "include_cluster_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 8 {
             types::Boolean.encode(buf, &self.include_topic_authorized_operations)?;
         } else {
             if self.include_topic_authorized_operations {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "include_topic_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -152,7 +164,10 @@ impl Encodable for MetadataRequest {
             total_size += types::Boolean.compute_size(&self.allow_auto_topic_creation)?;
         } else {
             if !self.allow_auto_topic_creation {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "allow_auto_topic_creation",
+                    version,
+                });
             }
         }
         if version >= 8 && version <= 10 {
@@ -160,23 +175,29 @@ impl Encodable for MetadataRequest {
                 types::Boolean.compute_size(&self.include_cluster_authorized_operations)?;
         } else {
             if self.include_cluster_authorized_operations {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "include_cluster_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 8 {
             total_size += types::Boolean.compute_size(&self.include_topic_authorized_operations)?;
         } else {
             if self.include_topic_authorized_operations {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "include_topic_authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -190,7 +211,10 @@ impl Encodable for MetadataRequest {
 impl Decodable for MetadataRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataRequest",
+            });
         }
         let topics = if version >= 9 {
             types::CompactArray(types::Struct { version }).decode(buf)?
@@ -302,7 +326,10 @@ impl MetadataRequestTopic {
 impl Encodable for MetadataRequestTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataRequestTopic",
+            });
         }
         if version >= 10 {
             types::Uuid.encode(buf, &self.topic_id)?;
@@ -315,10 +342,10 @@ impl Encodable for MetadataRequestTopic {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -339,10 +366,10 @@ impl Encodable for MetadataRequestTopic {
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -356,7 +383,10 @@ impl Encodable for MetadataRequestTopic {
 impl Decodable for MetadataRequestTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 13 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MetadataRequestTopic",
+            });
         }
         let topic_id = if version >= 10 {
             types::Uuid.decode(buf)?

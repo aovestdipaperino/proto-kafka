@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -126,41 +126,59 @@ impl Coordinator {
 impl Encodable for Coordinator {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Coordinator",
+            });
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.key)?;
         } else {
             if !self.key.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "key",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Int32.encode(buf, &self.node_id)?;
         } else {
             if self.node_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "node_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.host)?;
         } else {
             if !self.host.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "host",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Int32.encode(buf, &self.port)?;
         } else {
             if self.port != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "port",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Int16.encode(buf, &self.error_code)?;
         } else {
             if self.error_code != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_code",
+                    version,
+                });
             }
         }
         if version >= 4 {
@@ -169,10 +187,10 @@ impl Encodable for Coordinator {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -186,35 +204,50 @@ impl Encodable for Coordinator {
             total_size += types::CompactString.compute_size(&self.key)?;
         } else {
             if !self.key.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "key",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Int32.compute_size(&self.node_id)?;
         } else {
             if self.node_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "node_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::CompactString.compute_size(&self.host)?;
         } else {
             if !self.host.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "host",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Int32.compute_size(&self.port)?;
         } else {
             if self.port != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "port",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Int16.compute_size(&self.error_code)?;
         } else {
             if self.error_code != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_code",
+                    version,
+                });
             }
         }
         if version >= 4 {
@@ -223,10 +256,10 @@ impl Encodable for Coordinator {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -240,7 +273,10 @@ impl Encodable for Coordinator {
 impl Decodable for Coordinator {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Coordinator",
+            });
         }
         let key = if version >= 4 {
             types::CompactString.decode(buf)?
@@ -436,7 +472,10 @@ impl FindCoordinatorResponse {
 impl Encodable for FindCoordinatorResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FindCoordinatorResponse",
+            });
         }
         if version >= 1 {
             types::Int32.encode(buf, &self.throttle_time_ms)?;
@@ -445,7 +484,10 @@ impl Encodable for FindCoordinatorResponse {
             types::Int16.encode(buf, &self.error_code)?;
         } else {
             if self.error_code != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_code",
+                    version,
+                });
             }
         }
         if version >= 1 && version <= 3 {
@@ -459,7 +501,10 @@ impl Encodable for FindCoordinatorResponse {
             types::Int32.encode(buf, &self.node_id)?;
         } else {
             if self.node_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "node_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -470,30 +515,39 @@ impl Encodable for FindCoordinatorResponse {
             }
         } else {
             if !self.host.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "host",
+                    version,
+                });
             }
         }
         if version <= 3 {
             types::Int32.encode(buf, &self.port)?;
         } else {
             if self.port != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "port",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.coordinators)?;
         } else {
             if !self.coordinators.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "coordinators",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -510,7 +564,10 @@ impl Encodable for FindCoordinatorResponse {
             total_size += types::Int16.compute_size(&self.error_code)?;
         } else {
             if self.error_code != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_code",
+                    version,
+                });
             }
         }
         if version >= 1 && version <= 3 {
@@ -524,7 +581,10 @@ impl Encodable for FindCoordinatorResponse {
             total_size += types::Int32.compute_size(&self.node_id)?;
         } else {
             if self.node_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "node_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -535,14 +595,20 @@ impl Encodable for FindCoordinatorResponse {
             }
         } else {
             if !self.host.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "host",
+                    version,
+                });
             }
         }
         if version <= 3 {
             total_size += types::Int32.compute_size(&self.port)?;
         } else {
             if self.port != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "port",
+                    version,
+                });
             }
         }
         if version >= 4 {
@@ -550,16 +616,19 @@ impl Encodable for FindCoordinatorResponse {
                 types::CompactArray(types::Struct { version }).compute_size(&self.coordinators)?;
         } else {
             if !self.coordinators.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "coordinators",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -573,7 +642,10 @@ impl Encodable for FindCoordinatorResponse {
 impl Decodable for FindCoordinatorResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FindCoordinatorResponse",
+            });
         }
         let throttle_time_ms = if version >= 1 {
             types::Int32.decode(buf)?

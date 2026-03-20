@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -168,7 +168,10 @@ impl BrokerRegistrationRequest {
 impl Encodable for BrokerRegistrationRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerRegistrationRequest",
+            });
         }
         types::Int32.encode(buf, &self.broker_id)?;
         types::CompactString.encode(buf, &self.cluster_id)?;
@@ -180,7 +183,10 @@ impl Encodable for BrokerRegistrationRequest {
             types::Boolean.encode(buf, &self.is_migrating_zk_broker)?;
         } else {
             if self.is_migrating_zk_broker {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_migrating_zk_broker",
+                    version,
+                });
             }
         }
         if version >= 2 {
@@ -191,10 +197,10 @@ impl Encodable for BrokerRegistrationRequest {
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -215,7 +221,10 @@ impl Encodable for BrokerRegistrationRequest {
             total_size += types::Boolean.compute_size(&self.is_migrating_zk_broker)?;
         } else {
             if self.is_migrating_zk_broker {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_migrating_zk_broker",
+                    version,
+                });
             }
         }
         if version >= 2 {
@@ -226,10 +235,10 @@ impl Encodable for BrokerRegistrationRequest {
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -242,7 +251,10 @@ impl Encodable for BrokerRegistrationRequest {
 impl Decodable for BrokerRegistrationRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerRegistrationRequest",
+            });
         }
         let broker_id = types::Int32.decode(buf)?;
         let cluster_id = types::CompactString.decode(buf)?;
@@ -377,17 +389,20 @@ impl Feature {
 impl Encodable for Feature {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Feature",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::Int16.encode(buf, &self.min_supported_version)?;
         types::Int16.encode(buf, &self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -401,10 +416,10 @@ impl Encodable for Feature {
         total_size += types::Int16.compute_size(&self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -417,7 +432,10 @@ impl Encodable for Feature {
 impl Decodable for Feature {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Feature",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let min_supported_version = types::Int16.decode(buf)?;
@@ -536,7 +554,10 @@ impl Listener {
 impl Encodable for Listener {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Listener",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::CompactString.encode(buf, &self.host)?;
@@ -544,10 +565,10 @@ impl Encodable for Listener {
         types::Int16.encode(buf, &self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -562,10 +583,10 @@ impl Encodable for Listener {
         total_size += types::Int16.compute_size(&self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -578,7 +599,10 @@ impl Encodable for Listener {
 impl Decodable for Listener {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Listener",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let host = types::CompactString.decode(buf)?;

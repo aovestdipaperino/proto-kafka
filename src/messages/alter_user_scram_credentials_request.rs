@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,16 +70,19 @@ impl AlterUserScramCredentialsRequest {
 impl Encodable for AlterUserScramCredentialsRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterUserScramCredentialsRequest",
+            });
         }
         types::CompactArray(types::Struct { version }).encode(buf, &self.deletions)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.upsertions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -94,10 +97,10 @@ impl Encodable for AlterUserScramCredentialsRequest {
             types::CompactArray(types::Struct { version }).compute_size(&self.upsertions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -110,7 +113,10 @@ impl Encodable for AlterUserScramCredentialsRequest {
 impl Decodable for AlterUserScramCredentialsRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterUserScramCredentialsRequest",
+            });
         }
         let deletions = types::CompactArray(types::Struct { version }).decode(buf)?;
         let upsertions = types::CompactArray(types::Struct { version }).decode(buf)?;
@@ -198,16 +204,19 @@ impl ScramCredentialDeletion {
 impl Encodable for ScramCredentialDeletion {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ScramCredentialDeletion",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::Int8.encode(buf, &self.mechanism)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -220,10 +229,10 @@ impl Encodable for ScramCredentialDeletion {
         total_size += types::Int8.compute_size(&self.mechanism)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -236,7 +245,10 @@ impl Encodable for ScramCredentialDeletion {
 impl Decodable for ScramCredentialDeletion {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ScramCredentialDeletion",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let mechanism = types::Int8.decode(buf)?;
@@ -366,7 +378,10 @@ impl ScramCredentialUpsertion {
 impl Encodable for ScramCredentialUpsertion {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ScramCredentialUpsertion",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::Int8.encode(buf, &self.mechanism)?;
@@ -375,10 +390,10 @@ impl Encodable for ScramCredentialUpsertion {
         types::CompactBytes.encode(buf, &self.salted_password)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -394,10 +409,10 @@ impl Encodable for ScramCredentialUpsertion {
         total_size += types::CompactBytes.compute_size(&self.salted_password)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -410,7 +425,10 @@ impl Encodable for ScramCredentialUpsertion {
 impl Decodable for ScramCredentialUpsertion {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ScramCredentialUpsertion",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let mechanism = types::Int8.decode(buf)?;

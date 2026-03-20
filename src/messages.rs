@@ -3,6 +3,7 @@
 //! These messages are generated programmatically. See the [Kafka's protocol documentation](https://kafka.apache.org/protocol.html) for more information about a given message type.
 // WARNING: the items of this module are generated and should not be edited directly.
 
+use crate::error::Result;
 #[cfg(feature = "messages_enums")]
 #[cfg(any(feature = "client", feature = "broker"))]
 use crate::protocol::Decodable;
@@ -13,10 +14,6 @@ use crate::protocol::Encodable;
 use crate::protocol::Request;
 use crate::protocol::VersionRange;
 use crate::protocol::{HeaderVersion, NewType, StrBytes};
-#[cfg(feature = "messages_enums")]
-#[cfg(any(feature = "client", feature = "broker"))]
-use anyhow::Context;
-use anyhow::Result;
 use std::convert::TryFrom;
 
 pub mod consumer_protocol_assignment;
@@ -1621,7 +1618,7 @@ impl ApiKey {
 impl TryFrom<i16> for ApiKey {
     type Error = ();
 
-    fn try_from(v: i16) -> Result<Self, Self::Error> {
+    fn try_from(v: i16) -> std::result::Result<Self, Self::Error> {
         match v {
             x if x == ApiKey::Produce as i16 => Ok(ApiKey::Produce),
             x if x == ApiKey::Fetch as i16 => Ok(ApiKey::Fetch),
@@ -1916,7 +1913,7 @@ pub enum RequestKind {
 impl RequestKind {
     /// Encode the message into the target buffer
     #[cfg(feature = "client")]
-    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> anyhow::Result<()> {
+    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {
         match self {
             RequestKind::Produce(x) => encode(x, bytes, version),
             RequestKind::Fetch(x) => encode(x, bytes, version),
@@ -2013,7 +2010,7 @@ impl RequestKind {
         api_key: ApiKey,
         bytes: &mut bytes::Bytes,
         version: i16,
-    ) -> anyhow::Result<RequestKind> {
+    ) -> crate::error::Result<RequestKind> {
         match api_key {
             ApiKey::Produce => Ok(RequestKind::Produce(decode(bytes, version)?)),
             ApiKey::Fetch => Ok(RequestKind::Fetch(decode(bytes, version)?)),
@@ -2787,25 +2784,13 @@ impl From<DeleteShareGroupOffsetsRequest> for RequestKind {
 #[cfg(feature = "messages_enums")]
 #[cfg(any(feature = "client", feature = "broker"))]
 fn decode<T: Decodable>(bytes: &mut bytes::Bytes, version: i16) -> Result<T> {
-    T::decode(bytes, version).with_context(|| {
-        format!(
-            "Failed to decode {} v{} body",
-            std::any::type_name::<T>(),
-            version
-        )
-    })
+    T::decode(bytes, version)
 }
 
 #[cfg(feature = "messages_enums")]
 #[cfg(any(feature = "client", feature = "broker"))]
 fn encode<T: Encodable>(encodable: &T, bytes: &mut bytes::BytesMut, version: i16) -> Result<()> {
-    encodable.encode(bytes, version).with_context(|| {
-        format!(
-            "Failed to encode {} v{} body",
-            std::any::type_name::<T>(),
-            version
-        )
-    })
+    encodable.encode(bytes, version)
 }
 
 #[cfg(feature = "messages_enums")]
@@ -2815,13 +2800,7 @@ fn encode_into<T: Encodable, B: crate::protocol::buf::ByteBufMut>(
     buf: &mut B,
     version: i16,
 ) -> Result<()> {
-    encodable.encode(buf, version).with_context(|| {
-        format!(
-            "Failed to encode {} v{} body",
-            std::any::type_name::<T>(),
-            version
-        )
-    })
+    encodable.encode(buf, version)
 }
 
 /// Wrapping enum for all responses in the Kafka protocol.
@@ -3009,7 +2988,7 @@ pub enum ResponseKind {
 impl ResponseKind {
     /// Encode the message into the target buffer
     #[cfg(feature = "broker")]
-    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> anyhow::Result<()> {
+    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {
         match self {
             ResponseKind::Produce(x) => encode(x, bytes, version),
             ResponseKind::Fetch(x) => encode(x, bytes, version),
@@ -3100,110 +3079,13 @@ impl ResponseKind {
             ResponseKind::DeleteShareGroupOffsets(x) => encode(x, bytes, version),
         }
     }
-    /// Encode the message into a `ByteBufMut` (e.g. `SegmentedBuf` for zero-copy).
-    #[cfg(feature = "broker")]
-    pub fn encode_into<B: crate::protocol::buf::ByteBufMut>(
-        &self,
-        buf: &mut B,
-        version: i16,
-    ) -> anyhow::Result<()> {
-        match self {
-            ResponseKind::Produce(x) => encode_into(x, buf, version),
-            ResponseKind::Fetch(x) => encode_into(x, buf, version),
-            ResponseKind::ListOffsets(x) => encode_into(x, buf, version),
-            ResponseKind::Metadata(x) => encode_into(x, buf, version),
-            ResponseKind::OffsetCommit(x) => encode_into(x, buf, version),
-            ResponseKind::OffsetFetch(x) => encode_into(x, buf, version),
-            ResponseKind::FindCoordinator(x) => encode_into(x, buf, version),
-            ResponseKind::JoinGroup(x) => encode_into(x, buf, version),
-            ResponseKind::Heartbeat(x) => encode_into(x, buf, version),
-            ResponseKind::LeaveGroup(x) => encode_into(x, buf, version),
-            ResponseKind::SyncGroup(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeGroups(x) => encode_into(x, buf, version),
-            ResponseKind::ListGroups(x) => encode_into(x, buf, version),
-            ResponseKind::SaslHandshake(x) => encode_into(x, buf, version),
-            ResponseKind::ApiVersions(x) => encode_into(x, buf, version),
-            ResponseKind::CreateTopics(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteTopics(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteRecords(x) => encode_into(x, buf, version),
-            ResponseKind::InitProducerId(x) => encode_into(x, buf, version),
-            ResponseKind::OffsetForLeaderEpoch(x) => encode_into(x, buf, version),
-            ResponseKind::AddPartitionsToTxn(x) => encode_into(x, buf, version),
-            ResponseKind::AddOffsetsToTxn(x) => encode_into(x, buf, version),
-            ResponseKind::EndTxn(x) => encode_into(x, buf, version),
-            ResponseKind::WriteTxnMarkers(x) => encode_into(x, buf, version),
-            ResponseKind::TxnOffsetCommit(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeAcls(x) => encode_into(x, buf, version),
-            ResponseKind::CreateAcls(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteAcls(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeConfigs(x) => encode_into(x, buf, version),
-            ResponseKind::AlterConfigs(x) => encode_into(x, buf, version),
-            ResponseKind::AlterReplicaLogDirs(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeLogDirs(x) => encode_into(x, buf, version),
-            ResponseKind::SaslAuthenticate(x) => encode_into(x, buf, version),
-            ResponseKind::CreatePartitions(x) => encode_into(x, buf, version),
-            ResponseKind::CreateDelegationToken(x) => encode_into(x, buf, version),
-            ResponseKind::RenewDelegationToken(x) => encode_into(x, buf, version),
-            ResponseKind::ExpireDelegationToken(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeDelegationToken(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteGroups(x) => encode_into(x, buf, version),
-            ResponseKind::ElectLeaders(x) => encode_into(x, buf, version),
-            ResponseKind::IncrementalAlterConfigs(x) => encode_into(x, buf, version),
-            ResponseKind::AlterPartitionReassignments(x) => encode_into(x, buf, version),
-            ResponseKind::ListPartitionReassignments(x) => encode_into(x, buf, version),
-            ResponseKind::OffsetDelete(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeClientQuotas(x) => encode_into(x, buf, version),
-            ResponseKind::AlterClientQuotas(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeUserScramCredentials(x) => encode_into(x, buf, version),
-            ResponseKind::AlterUserScramCredentials(x) => encode_into(x, buf, version),
-            ResponseKind::Vote(x) => encode_into(x, buf, version),
-            ResponseKind::BeginQuorumEpoch(x) => encode_into(x, buf, version),
-            ResponseKind::EndQuorumEpoch(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeQuorum(x) => encode_into(x, buf, version),
-            ResponseKind::AlterPartition(x) => encode_into(x, buf, version),
-            ResponseKind::UpdateFeatures(x) => encode_into(x, buf, version),
-            ResponseKind::Envelope(x) => encode_into(x, buf, version),
-            ResponseKind::FetchSnapshot(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeCluster(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeProducers(x) => encode_into(x, buf, version),
-            ResponseKind::BrokerRegistration(x) => encode_into(x, buf, version),
-            ResponseKind::BrokerHeartbeat(x) => encode_into(x, buf, version),
-            ResponseKind::UnregisterBroker(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeTransactions(x) => encode_into(x, buf, version),
-            ResponseKind::ListTransactions(x) => encode_into(x, buf, version),
-            ResponseKind::AllocateProducerIds(x) => encode_into(x, buf, version),
-            ResponseKind::ConsumerGroupHeartbeat(x) => encode_into(x, buf, version),
-            ResponseKind::ConsumerGroupDescribe(x) => encode_into(x, buf, version),
-            ResponseKind::ControllerRegistration(x) => encode_into(x, buf, version),
-            ResponseKind::GetTelemetrySubscriptions(x) => encode_into(x, buf, version),
-            ResponseKind::PushTelemetry(x) => encode_into(x, buf, version),
-            ResponseKind::AssignReplicasToDirs(x) => encode_into(x, buf, version),
-            ResponseKind::ListConfigResources(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeTopicPartitions(x) => encode_into(x, buf, version),
-            ResponseKind::ShareGroupHeartbeat(x) => encode_into(x, buf, version),
-            ResponseKind::ShareGroupDescribe(x) => encode_into(x, buf, version),
-            ResponseKind::ShareFetch(x) => encode_into(x, buf, version),
-            ResponseKind::ShareAcknowledge(x) => encode_into(x, buf, version),
-            ResponseKind::AddRaftVoter(x) => encode_into(x, buf, version),
-            ResponseKind::RemoveRaftVoter(x) => encode_into(x, buf, version),
-            ResponseKind::UpdateRaftVoter(x) => encode_into(x, buf, version),
-            ResponseKind::InitializeShareGroupState(x) => encode_into(x, buf, version),
-            ResponseKind::ReadShareGroupState(x) => encode_into(x, buf, version),
-            ResponseKind::WriteShareGroupState(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteShareGroupState(x) => encode_into(x, buf, version),
-            ResponseKind::ReadShareGroupStateSummary(x) => encode_into(x, buf, version),
-            ResponseKind::DescribeShareGroupOffsets(x) => encode_into(x, buf, version),
-            ResponseKind::AlterShareGroupOffsets(x) => encode_into(x, buf, version),
-            ResponseKind::DeleteShareGroupOffsets(x) => encode_into(x, buf, version),
-        }
-    }
     /// Decode the message from the provided buffer and version
     #[cfg(feature = "client")]
     pub fn decode(
         api_key: ApiKey,
         bytes: &mut bytes::Bytes,
         version: i16,
-    ) -> anyhow::Result<ResponseKind> {
+    ) -> crate::error::Result<ResponseKind> {
         match api_key {
             ApiKey::Produce => Ok(ResponseKind::Produce(decode(bytes, version)?)),
             ApiKey::Fetch => Ok(ResponseKind::Fetch(decode(bytes, version)?)),
@@ -3362,6 +3244,103 @@ impl ResponseKind {
             ApiKey::DeleteShareGroupOffsets => Ok(ResponseKind::DeleteShareGroupOffsets(decode(
                 bytes, version,
             )?)),
+        }
+    }
+    /// Encode the message into a `ByteBufMut` (e.g. `SegmentedBuf` for zero-copy).
+    #[cfg(feature = "broker")]
+    pub fn encode_into<B: crate::protocol::buf::ByteBufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+    ) -> crate::error::Result<()> {
+        match self {
+            ResponseKind::Produce(x) => encode_into(x, buf, version),
+            ResponseKind::Fetch(x) => encode_into(x, buf, version),
+            ResponseKind::ListOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::Metadata(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetCommit(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetFetch(x) => encode_into(x, buf, version),
+            ResponseKind::FindCoordinator(x) => encode_into(x, buf, version),
+            ResponseKind::JoinGroup(x) => encode_into(x, buf, version),
+            ResponseKind::Heartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::LeaveGroup(x) => encode_into(x, buf, version),
+            ResponseKind::SyncGroup(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeGroups(x) => encode_into(x, buf, version),
+            ResponseKind::ListGroups(x) => encode_into(x, buf, version),
+            ResponseKind::SaslHandshake(x) => encode_into(x, buf, version),
+            ResponseKind::ApiVersions(x) => encode_into(x, buf, version),
+            ResponseKind::CreateTopics(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteTopics(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteRecords(x) => encode_into(x, buf, version),
+            ResponseKind::InitProducerId(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetForLeaderEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::AddPartitionsToTxn(x) => encode_into(x, buf, version),
+            ResponseKind::AddOffsetsToTxn(x) => encode_into(x, buf, version),
+            ResponseKind::EndTxn(x) => encode_into(x, buf, version),
+            ResponseKind::WriteTxnMarkers(x) => encode_into(x, buf, version),
+            ResponseKind::TxnOffsetCommit(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeAcls(x) => encode_into(x, buf, version),
+            ResponseKind::CreateAcls(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteAcls(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterReplicaLogDirs(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeLogDirs(x) => encode_into(x, buf, version),
+            ResponseKind::SaslAuthenticate(x) => encode_into(x, buf, version),
+            ResponseKind::CreatePartitions(x) => encode_into(x, buf, version),
+            ResponseKind::CreateDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::RenewDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::ExpireDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeDelegationToken(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteGroups(x) => encode_into(x, buf, version),
+            ResponseKind::ElectLeaders(x) => encode_into(x, buf, version),
+            ResponseKind::IncrementalAlterConfigs(x) => encode_into(x, buf, version),
+            ResponseKind::AlterPartitionReassignments(x) => encode_into(x, buf, version),
+            ResponseKind::ListPartitionReassignments(x) => encode_into(x, buf, version),
+            ResponseKind::OffsetDelete(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeClientQuotas(x) => encode_into(x, buf, version),
+            ResponseKind::AlterClientQuotas(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeUserScramCredentials(x) => encode_into(x, buf, version),
+            ResponseKind::AlterUserScramCredentials(x) => encode_into(x, buf, version),
+            ResponseKind::Vote(x) => encode_into(x, buf, version),
+            ResponseKind::BeginQuorumEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::EndQuorumEpoch(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeQuorum(x) => encode_into(x, buf, version),
+            ResponseKind::AlterPartition(x) => encode_into(x, buf, version),
+            ResponseKind::UpdateFeatures(x) => encode_into(x, buf, version),
+            ResponseKind::Envelope(x) => encode_into(x, buf, version),
+            ResponseKind::FetchSnapshot(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeCluster(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeProducers(x) => encode_into(x, buf, version),
+            ResponseKind::BrokerRegistration(x) => encode_into(x, buf, version),
+            ResponseKind::BrokerHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::UnregisterBroker(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeTransactions(x) => encode_into(x, buf, version),
+            ResponseKind::ListTransactions(x) => encode_into(x, buf, version),
+            ResponseKind::AllocateProducerIds(x) => encode_into(x, buf, version),
+            ResponseKind::ConsumerGroupHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::ConsumerGroupDescribe(x) => encode_into(x, buf, version),
+            ResponseKind::ControllerRegistration(x) => encode_into(x, buf, version),
+            ResponseKind::GetTelemetrySubscriptions(x) => encode_into(x, buf, version),
+            ResponseKind::PushTelemetry(x) => encode_into(x, buf, version),
+            ResponseKind::AssignReplicasToDirs(x) => encode_into(x, buf, version),
+            ResponseKind::ListConfigResources(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeTopicPartitions(x) => encode_into(x, buf, version),
+            ResponseKind::ShareGroupHeartbeat(x) => encode_into(x, buf, version),
+            ResponseKind::ShareGroupDescribe(x) => encode_into(x, buf, version),
+            ResponseKind::ShareFetch(x) => encode_into(x, buf, version),
+            ResponseKind::ShareAcknowledge(x) => encode_into(x, buf, version),
+            ResponseKind::AddRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::RemoveRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::UpdateRaftVoter(x) => encode_into(x, buf, version),
+            ResponseKind::InitializeShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::ReadShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::WriteShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteShareGroupState(x) => encode_into(x, buf, version),
+            ResponseKind::ReadShareGroupStateSummary(x) => encode_into(x, buf, version),
+            ResponseKind::DescribeShareGroupOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::AlterShareGroupOffsets(x) => encode_into(x, buf, version),
+            ResponseKind::DeleteShareGroupOffsets(x) => encode_into(x, buf, version),
         }
     }
     /// Get the version of request header that needs to be prepended to this message

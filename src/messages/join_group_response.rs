@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -168,7 +168,10 @@ impl JoinGroupResponse {
 impl Encodable for JoinGroupResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "JoinGroupResponse",
+            });
         }
         if version >= 2 {
             types::Int32.encode(buf, &self.throttle_time_ms)?;
@@ -192,7 +195,10 @@ impl Encodable for JoinGroupResponse {
             types::Boolean.encode(buf, &self.skip_assignment)?;
         } else {
             if self.skip_assignment {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "skip_assignment",
+                    version,
+                });
             }
         }
         if version >= 6 {
@@ -208,10 +214,10 @@ impl Encodable for JoinGroupResponse {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -243,7 +249,10 @@ impl Encodable for JoinGroupResponse {
             total_size += types::Boolean.compute_size(&self.skip_assignment)?;
         } else {
             if self.skip_assignment {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "skip_assignment",
+                    version,
+                });
             }
         }
         if version >= 6 {
@@ -260,10 +269,10 @@ impl Encodable for JoinGroupResponse {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -277,7 +286,10 @@ impl Encodable for JoinGroupResponse {
 impl Decodable for JoinGroupResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "JoinGroupResponse",
+            });
         }
         let throttle_time_ms = if version >= 2 {
             types::Int32.decode(buf)?
@@ -430,7 +442,10 @@ impl JoinGroupResponseMember {
 impl Encodable for JoinGroupResponseMember {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "JoinGroupResponseMember",
+            });
         }
         if version >= 6 {
             types::CompactString.encode(buf, &self.member_id)?;
@@ -452,10 +467,10 @@ impl Encodable for JoinGroupResponseMember {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -485,10 +500,10 @@ impl Encodable for JoinGroupResponseMember {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -502,7 +517,10 @@ impl Encodable for JoinGroupResponseMember {
 impl Decodable for JoinGroupResponseMember {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "JoinGroupResponseMember",
+            });
         }
         let member_id = if version >= 6 {
             types::CompactString.decode(buf)?

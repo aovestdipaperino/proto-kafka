@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -182,7 +182,10 @@ impl ConsumerGroupHeartbeatRequest {
 impl Encodable for ConsumerGroupHeartbeatRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerGroupHeartbeatRequest",
+            });
         }
         types::CompactString.encode(buf, &self.group_id)?;
         types::CompactString.encode(buf, &self.member_id)?;
@@ -195,17 +198,20 @@ impl Encodable for ConsumerGroupHeartbeatRequest {
             types::CompactString.encode(buf, &self.subscribed_topic_regex)?;
         } else {
             if !self.subscribed_topic_regex.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "subscribed_topic_regex",
+                    version,
+                });
             }
         }
         types::CompactString.encode(buf, &self.server_assignor)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topic_partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -226,7 +232,10 @@ impl Encodable for ConsumerGroupHeartbeatRequest {
             total_size += types::CompactString.compute_size(&self.subscribed_topic_regex)?;
         } else {
             if !self.subscribed_topic_regex.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "subscribed_topic_regex",
+                    version,
+                });
             }
         }
         total_size += types::CompactString.compute_size(&self.server_assignor)?;
@@ -234,10 +243,10 @@ impl Encodable for ConsumerGroupHeartbeatRequest {
             types::CompactArray(types::Struct { version }).compute_size(&self.topic_partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -250,7 +259,10 @@ impl Encodable for ConsumerGroupHeartbeatRequest {
 impl Decodable for ConsumerGroupHeartbeatRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerGroupHeartbeatRequest",
+            });
         }
         let group_id = types::CompactString.decode(buf)?;
         let member_id = types::CompactString.decode(buf)?;
@@ -366,16 +378,19 @@ impl TopicPartitions {
 impl Encodable for TopicPartitions {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartitions",
+            });
         }
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Int32).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -388,10 +403,10 @@ impl Encodable for TopicPartitions {
         total_size += types::CompactArray(types::Int32).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -404,7 +419,10 @@ impl Encodable for TopicPartitions {
 impl Decodable for TopicPartitions {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartitions",
+            });
         }
         let topic_id = types::Uuid.decode(buf)?;
         let partitions = types::CompactArray(types::Int32).decode(buf)?;

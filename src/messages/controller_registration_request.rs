@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -112,7 +112,10 @@ impl ControllerRegistrationRequest {
 impl Encodable for ControllerRegistrationRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ControllerRegistrationRequest",
+            });
         }
         types::Int32.encode(buf, &self.controller_id)?;
         types::Uuid.encode(buf, &self.incarnation_id)?;
@@ -121,10 +124,10 @@ impl Encodable for ControllerRegistrationRequest {
         types::CompactArray(types::Struct { version }).encode(buf, &self.features)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -142,10 +145,10 @@ impl Encodable for ControllerRegistrationRequest {
             types::CompactArray(types::Struct { version }).compute_size(&self.features)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -158,7 +161,10 @@ impl Encodable for ControllerRegistrationRequest {
 impl Decodable for ControllerRegistrationRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ControllerRegistrationRequest",
+            });
         }
         let controller_id = types::Int32.decode(buf)?;
         let incarnation_id = types::Uuid.decode(buf)?;
@@ -269,17 +275,20 @@ impl Feature {
 impl Encodable for Feature {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Feature",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::Int16.encode(buf, &self.min_supported_version)?;
         types::Int16.encode(buf, &self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -293,10 +302,10 @@ impl Encodable for Feature {
         total_size += types::Int16.compute_size(&self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -309,7 +318,10 @@ impl Encodable for Feature {
 impl Decodable for Feature {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Feature",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let min_supported_version = types::Int16.decode(buf)?;
@@ -428,7 +440,10 @@ impl Listener {
 impl Encodable for Listener {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Listener",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::CompactString.encode(buf, &self.host)?;
@@ -436,10 +451,10 @@ impl Encodable for Listener {
         types::Int16.encode(buf, &self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -454,10 +469,10 @@ impl Encodable for Listener {
         total_size += types::Int16.compute_size(&self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -470,7 +485,10 @@ impl Encodable for Listener {
 impl Decodable for Listener {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Listener",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let host = types::CompactString.decode(buf)?;

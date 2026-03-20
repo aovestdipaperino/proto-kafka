@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,17 +84,20 @@ impl AlterPartitionRequest {
 impl Encodable for AlterPartitionRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterPartitionRequest",
+            });
         }
         types::Int32.encode(buf, &self.broker_id)?;
         types::Int64.encode(buf, &self.broker_epoch)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -108,10 +111,10 @@ impl Encodable for AlterPartitionRequest {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -124,7 +127,10 @@ impl Encodable for AlterPartitionRequest {
 impl Decodable for AlterPartitionRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AlterPartitionRequest",
+            });
         }
         let broker_id = types::Int32.decode(buf)?;
         let broker_epoch = types::Int64.decode(buf)?;
@@ -215,28 +221,37 @@ impl BrokerState {
 impl Encodable for BrokerState {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerState",
+            });
         }
         if version >= 3 {
             types::Int32.encode(buf, &self.broker_id)?;
         } else {
             if self.broker_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "broker_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int64.encode(buf, &self.broker_epoch)?;
         } else {
             if self.broker_epoch != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "broker_epoch",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -249,22 +264,28 @@ impl Encodable for BrokerState {
             total_size += types::Int32.compute_size(&self.broker_id)?;
         } else {
             if self.broker_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "broker_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int64.compute_size(&self.broker_epoch)?;
         } else {
             if self.broker_epoch != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "broker_epoch",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -277,7 +298,10 @@ impl Encodable for BrokerState {
 impl Decodable for BrokerState {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerState",
+            });
         }
         let broker_id = if version >= 3 {
             types::Int32.decode(buf)?
@@ -429,7 +453,10 @@ impl PartitionData {
 impl Encodable for PartitionData {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "PartitionData",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::Int32.encode(buf, &self.leader_epoch)?;
@@ -437,7 +464,10 @@ impl Encodable for PartitionData {
             types::CompactArray(types::Int32).encode(buf, &self.new_isr)?;
         } else {
             if !self.new_isr.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "new_isr",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -445,17 +475,20 @@ impl Encodable for PartitionData {
                 .encode(buf, &self.new_isr_with_epochs)?;
         } else {
             if !self.new_isr_with_epochs.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "new_isr_with_epochs",
+                    version,
+                });
             }
         }
         types::Int8.encode(buf, &self.leader_recovery_state)?;
         types::Int32.encode(buf, &self.partition_epoch)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -470,7 +503,10 @@ impl Encodable for PartitionData {
             total_size += types::CompactArray(types::Int32).compute_size(&self.new_isr)?;
         } else {
             if !self.new_isr.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "new_isr",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -478,17 +514,20 @@ impl Encodable for PartitionData {
                 .compute_size(&self.new_isr_with_epochs)?;
         } else {
             if !self.new_isr_with_epochs.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "new_isr_with_epochs",
+                    version,
+                });
             }
         }
         total_size += types::Int8.compute_size(&self.leader_recovery_state)?;
         total_size += types::Int32.compute_size(&self.partition_epoch)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -501,7 +540,10 @@ impl Encodable for PartitionData {
 impl Decodable for PartitionData {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "PartitionData",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let leader_epoch = types::Int32.decode(buf)?;
@@ -609,16 +651,19 @@ impl TopicData {
 impl Encodable for TopicData {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicData",
+            });
         }
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -632,10 +677,10 @@ impl Encodable for TopicData {
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -648,7 +693,10 @@ impl Encodable for TopicData {
 impl Decodable for TopicData {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicData",
+            });
         }
         let topic_id = types::Uuid.decode(buf)?;
         let partitions = types::CompactArray(types::Struct { version }).decode(buf)?;

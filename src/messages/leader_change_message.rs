@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -97,7 +97,10 @@ impl LeaderChangeMessage {
 impl Encodable for LeaderChangeMessage {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "LeaderChangeMessage",
+            });
         }
         types::Int16.encode(buf, &self.version)?;
         types::Int32.encode(buf, &self.leader_id)?;
@@ -105,10 +108,10 @@ impl Encodable for LeaderChangeMessage {
         types::CompactArray(types::Struct { version }).encode(buf, &self.granting_voters)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -124,10 +127,10 @@ impl Encodable for LeaderChangeMessage {
             types::CompactArray(types::Struct { version }).compute_size(&self.granting_voters)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -139,7 +142,10 @@ impl Encodable for LeaderChangeMessage {
 impl Decodable for LeaderChangeMessage {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "LeaderChangeMessage",
+            });
         }
         let version = types::Int16.decode(buf)?;
         let leader_id = types::Int32.decode(buf)?;
@@ -232,22 +238,28 @@ impl Voter {
 impl Encodable for Voter {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Voter",
+            });
         }
         types::Int32.encode(buf, &self.voter_id)?;
         if version >= 1 {
             types::Uuid.encode(buf, &self.voter_directory_id)?;
         } else {
             if &self.voter_directory_id != &Uuid::nil() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "voter_directory_id",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -261,15 +273,18 @@ impl Encodable for Voter {
             total_size += types::Uuid.compute_size(&self.voter_directory_id)?;
         } else {
             if &self.voter_directory_id != &Uuid::nil() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "voter_directory_id",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -281,7 +296,10 @@ impl Encodable for Voter {
 impl Decodable for Voter {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "Voter",
+            });
         }
         let voter_id = types::Int32.decode(buf)?;
         let voter_directory_id = if version >= 1 {

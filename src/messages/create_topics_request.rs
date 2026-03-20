@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,7 +70,10 @@ impl CreatableReplicaAssignment {
 impl Encodable for CreatableReplicaAssignment {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableReplicaAssignment",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         if version >= 5 {
@@ -81,10 +84,10 @@ impl Encodable for CreatableReplicaAssignment {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -103,10 +106,10 @@ impl Encodable for CreatableReplicaAssignment {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -120,7 +123,10 @@ impl Encodable for CreatableReplicaAssignment {
 impl Decodable for CreatableReplicaAssignment {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableReplicaAssignment",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let broker_ids = if version >= 5 {
@@ -256,7 +262,10 @@ impl CreatableTopic {
 impl Encodable for CreatableTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopic",
+            });
         }
         if version >= 5 {
             types::CompactString.encode(buf, &self.name)?;
@@ -278,10 +287,10 @@ impl Encodable for CreatableTopic {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -314,10 +323,10 @@ impl Encodable for CreatableTopic {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -331,7 +340,10 @@ impl Encodable for CreatableTopic {
 impl Decodable for CreatableTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopic",
+            });
         }
         let name = if version >= 5 {
             types::CompactString.decode(buf)?
@@ -442,7 +454,10 @@ impl CreatableTopicConfig {
 impl Encodable for CreatableTopicConfig {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicConfig",
+            });
         }
         if version >= 5 {
             types::CompactString.encode(buf, &self.name)?;
@@ -457,10 +472,10 @@ impl Encodable for CreatableTopicConfig {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -483,10 +498,10 @@ impl Encodable for CreatableTopicConfig {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -500,7 +515,10 @@ impl Encodable for CreatableTopicConfig {
 impl Decodable for CreatableTopicConfig {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicConfig",
+            });
         }
         let name = if version >= 5 {
             types::CompactString.decode(buf)?
@@ -612,7 +630,10 @@ impl CreateTopicsRequest {
 impl Encodable for CreateTopicsRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateTopicsRequest",
+            });
         }
         if version >= 5 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
@@ -624,10 +645,10 @@ impl Encodable for CreateTopicsRequest {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -648,10 +669,10 @@ impl Encodable for CreateTopicsRequest {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -665,7 +686,10 @@ impl Encodable for CreateTopicsRequest {
 impl Decodable for CreateTopicsRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateTopicsRequest",
+            });
         }
         let topics = if version >= 5 {
             types::CompactArray(types::Struct { version }).decode(buf)?

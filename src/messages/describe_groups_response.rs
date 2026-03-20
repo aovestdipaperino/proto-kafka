@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,7 +70,10 @@ impl DescribeGroupsResponse {
 impl Encodable for DescribeGroupsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeGroupsResponse",
+            });
         }
         if version >= 1 {
             types::Int32.encode(buf, &self.throttle_time_ms)?;
@@ -83,10 +86,10 @@ impl Encodable for DescribeGroupsResponse {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -108,10 +111,10 @@ impl Encodable for DescribeGroupsResponse {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -125,7 +128,10 @@ impl Encodable for DescribeGroupsResponse {
 impl Decodable for DescribeGroupsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeGroupsResponse",
+            });
         }
         let throttle_time_ms = if version >= 1 {
             types::Int32.decode(buf)?
@@ -307,14 +313,20 @@ impl DescribedGroup {
 impl Encodable for DescribedGroup {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedGroup",
+            });
         }
         types::Int16.encode(buf, &self.error_code)?;
         if version >= 6 {
             types::CompactString.encode(buf, &self.error_message)?;
         } else {
             if !self.error_message.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_message",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -346,16 +358,19 @@ impl Encodable for DescribedGroup {
             types::Int32.encode(buf, &self.authorized_operations)?;
         } else {
             if self.authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -370,7 +385,10 @@ impl Encodable for DescribedGroup {
             total_size += types::CompactString.compute_size(&self.error_message)?;
         } else {
             if !self.error_message.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "error_message",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -403,16 +421,19 @@ impl Encodable for DescribedGroup {
             total_size += types::Int32.compute_size(&self.authorized_operations)?;
         } else {
             if self.authorized_operations != -2147483648 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "authorized_operations",
+                    version,
+                });
             }
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -426,7 +447,10 @@ impl Encodable for DescribedGroup {
 impl Decodable for DescribedGroup {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedGroup",
+            });
         }
         let error_code = types::Int16.decode(buf)?;
         let error_message = if version >= 6 {
@@ -618,7 +642,10 @@ impl DescribedGroupMember {
 impl Encodable for DescribedGroupMember {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedGroupMember",
+            });
         }
         if version >= 5 {
             types::CompactString.encode(buf, &self.member_id)?;
@@ -655,10 +682,10 @@ impl Encodable for DescribedGroupMember {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -703,10 +730,10 @@ impl Encodable for DescribedGroupMember {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -720,7 +747,10 @@ impl Encodable for DescribedGroupMember {
 impl Decodable for DescribedGroupMember {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 6 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedGroupMember",
+            });
         }
         let member_id = if version >= 5 {
             types::CompactString.decode(buf)?

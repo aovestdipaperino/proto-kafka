@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -112,13 +112,19 @@ impl CreatableTopicConfigs {
 impl Encodable for CreatableTopicConfigs {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicConfigs",
+            });
         }
         if version >= 5 {
             types::CompactString.encode(buf, &self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -130,14 +136,20 @@ impl Encodable for CreatableTopicConfigs {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "value",
+                    version,
+                });
             }
         }
         if version >= 5 {
             types::Boolean.encode(buf, &self.read_only)?;
         } else {
             if self.read_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "read_only",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -147,16 +159,19 @@ impl Encodable for CreatableTopicConfigs {
             types::Boolean.encode(buf, &self.is_sensitive)?;
         } else {
             if self.is_sensitive {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_sensitive",
+                    version,
+                });
             }
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -170,7 +185,10 @@ impl Encodable for CreatableTopicConfigs {
             total_size += types::CompactString.compute_size(&self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -182,14 +200,20 @@ impl Encodable for CreatableTopicConfigs {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "value",
+                    version,
+                });
             }
         }
         if version >= 5 {
             total_size += types::Boolean.compute_size(&self.read_only)?;
         } else {
             if self.read_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "read_only",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -199,16 +223,19 @@ impl Encodable for CreatableTopicConfigs {
             total_size += types::Boolean.compute_size(&self.is_sensitive)?;
         } else {
             if self.is_sensitive {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_sensitive",
+                    version,
+                });
             }
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -222,7 +249,10 @@ impl Encodable for CreatableTopicConfigs {
 impl Decodable for CreatableTopicConfigs {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicConfigs",
+            });
         }
         let name = if version >= 5 {
             types::CompactString.decode(buf)?
@@ -425,7 +455,10 @@ impl CreatableTopicResult {
 impl Encodable for CreatableTopicResult {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicResult",
+            });
         }
         if version >= 5 {
             types::CompactString.encode(buf, &self.name)?;
@@ -456,19 +489,19 @@ impl Encodable for CreatableTopicResult {
                 num_tagged_fields += 1;
             }
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if self.topic_config_error_code != 0 {
                 let computed_size = types::Int16.compute_size(&self.topic_config_error_code)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 0)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -511,19 +544,19 @@ impl Encodable for CreatableTopicResult {
                 num_tagged_fields += 1;
             }
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if self.topic_config_error_code != 0 {
                 let computed_size = types::Int16.compute_size(&self.topic_config_error_code)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(0)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -540,7 +573,10 @@ impl Encodable for CreatableTopicResult {
 impl Decodable for CreatableTopicResult {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableTopicResult",
+            });
         }
         let name = if version >= 5 {
             types::CompactString.decode(buf)?
@@ -679,7 +715,10 @@ impl CreateTopicsResponse {
 impl Encodable for CreateTopicsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateTopicsResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         if version >= 5 {
@@ -690,10 +729,10 @@ impl Encodable for CreateTopicsResponse {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -713,10 +752,10 @@ impl Encodable for CreateTopicsResponse {
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -730,7 +769,10 @@ impl Encodable for CreateTopicsResponse {
 impl Decodable for CreateTopicsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 7 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateTopicsResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let topics = if version >= 5 {

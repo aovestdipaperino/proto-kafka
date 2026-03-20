@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -112,7 +112,10 @@ impl WritableTxnMarker {
 impl Encodable for WritableTxnMarker {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WritableTxnMarker",
+            });
         }
         types::Int64.encode(buf, &self.producer_id)?;
         types::Int16.encode(buf, &self.producer_epoch)?;
@@ -121,10 +124,10 @@ impl Encodable for WritableTxnMarker {
         types::Int32.encode(buf, &self.coordinator_epoch)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -140,10 +143,10 @@ impl Encodable for WritableTxnMarker {
         total_size += types::Int32.compute_size(&self.coordinator_epoch)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -156,7 +159,10 @@ impl Encodable for WritableTxnMarker {
 impl Decodable for WritableTxnMarker {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WritableTxnMarker",
+            });
         }
         let producer_id = types::Int64.decode(buf)?;
         let producer_epoch = types::Int16.decode(buf)?;
@@ -253,16 +259,19 @@ impl WritableTxnMarkerTopic {
 impl Encodable for WritableTxnMarkerTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WritableTxnMarkerTopic",
+            });
         }
         types::CompactString.encode(buf, &self.name)?;
         types::CompactArray(types::Int32).encode(buf, &self.partition_indexes)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -275,10 +284,10 @@ impl Encodable for WritableTxnMarkerTopic {
         total_size += types::CompactArray(types::Int32).compute_size(&self.partition_indexes)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -291,7 +300,10 @@ impl Encodable for WritableTxnMarkerTopic {
 impl Decodable for WritableTxnMarkerTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WritableTxnMarkerTopic",
+            });
         }
         let name = types::CompactString.decode(buf)?;
         let partition_indexes = types::CompactArray(types::Int32).decode(buf)?;
@@ -365,15 +377,18 @@ impl WriteTxnMarkersRequest {
 impl Encodable for WriteTxnMarkersRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WriteTxnMarkersRequest",
+            });
         }
         types::CompactArray(types::Struct { version }).encode(buf, &self.markers)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -385,10 +400,10 @@ impl Encodable for WriteTxnMarkersRequest {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.markers)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -401,7 +416,10 @@ impl Encodable for WriteTxnMarkersRequest {
 impl Decodable for WriteTxnMarkersRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "WriteTxnMarkersRequest",
+            });
         }
         let markers = types::CompactArray(types::Struct { version }).decode(buf)?;
         let mut unknown_tagged_fields = BTreeMap::new();

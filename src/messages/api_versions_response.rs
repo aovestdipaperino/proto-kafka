@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,7 +84,10 @@ impl ApiVersion {
 impl Encodable for ApiVersion {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ApiVersion",
+            });
         }
         types::Int16.encode(buf, &self.api_key)?;
         types::Int16.encode(buf, &self.min_version)?;
@@ -92,10 +95,10 @@ impl Encodable for ApiVersion {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -111,10 +114,10 @@ impl Encodable for ApiVersion {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -128,7 +131,10 @@ impl Encodable for ApiVersion {
 impl Decodable for ApiVersion {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ApiVersion",
+            });
         }
         let api_key = types::Int16.decode(buf)?;
         let min_version = types::Int16.decode(buf)?;
@@ -291,7 +297,10 @@ impl ApiVersionsResponse {
 impl Encodable for ApiVersionsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ApiVersionsResponse",
+            });
         }
         types::Int16.encode(buf, &self.error_code)?;
         if version >= 3 {
@@ -317,20 +326,20 @@ impl Encodable for ApiVersionsResponse {
                 num_tagged_fields += 1;
             }
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if !self.supported_features.is_empty() {
                 let computed_size = types::CompactArray(types::Struct { version })
                     .compute_size(&self.supported_features)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 0)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -340,10 +349,10 @@ impl Encodable for ApiVersionsResponse {
             if self.finalized_features_epoch != -1 {
                 let computed_size = types::Int64.compute_size(&self.finalized_features_epoch)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 1)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -353,10 +362,10 @@ impl Encodable for ApiVersionsResponse {
                 let computed_size = types::CompactArray(types::Struct { version })
                     .compute_size(&self.finalized_features)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 2)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -366,10 +375,10 @@ impl Encodable for ApiVersionsResponse {
             if self.zk_migration_ready {
                 let computed_size = types::Boolean.compute_size(&self.zk_migration_ready)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 3)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -407,20 +416,20 @@ impl Encodable for ApiVersionsResponse {
                 num_tagged_fields += 1;
             }
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if !self.supported_features.is_empty() {
                 let computed_size = types::CompactArray(types::Struct { version })
                     .compute_size(&self.supported_features)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(0)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -429,10 +438,10 @@ impl Encodable for ApiVersionsResponse {
             if self.finalized_features_epoch != -1 {
                 let computed_size = types::Int64.compute_size(&self.finalized_features_epoch)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(1)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -442,10 +451,10 @@ impl Encodable for ApiVersionsResponse {
                 let computed_size = types::CompactArray(types::Struct { version })
                     .compute_size(&self.finalized_features)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(2)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -454,10 +463,10 @@ impl Encodable for ApiVersionsResponse {
             if self.zk_migration_ready {
                 let computed_size = types::Boolean.compute_size(&self.zk_migration_ready)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(3)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -474,7 +483,10 @@ impl Encodable for ApiVersionsResponse {
 impl Decodable for ApiVersionsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ApiVersionsResponse",
+            });
         }
         let error_code = types::Int16.decode(buf)?;
         let api_keys = if version >= 3 {
@@ -619,36 +631,48 @@ impl FinalizedFeatureKey {
 impl Encodable for FinalizedFeatureKey {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FinalizedFeatureKey",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int16.encode(buf, &self.max_version_level)?;
         } else {
             if self.max_version_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "max_version_level",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int16.encode(buf, &self.min_version_level)?;
         } else {
             if self.min_version_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "min_version_level",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -662,30 +686,39 @@ impl Encodable for FinalizedFeatureKey {
             total_size += types::CompactString.compute_size(&self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int16.compute_size(&self.max_version_level)?;
         } else {
             if self.max_version_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "max_version_level",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int16.compute_size(&self.min_version_level)?;
         } else {
             if self.min_version_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "min_version_level",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -699,7 +732,10 @@ impl Encodable for FinalizedFeatureKey {
 impl Decodable for FinalizedFeatureKey {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "FinalizedFeatureKey",
+            });
         }
         let name = if version >= 3 {
             types::CompactString.decode(buf)?
@@ -818,36 +854,48 @@ impl SupportedFeatureKey {
 impl Encodable for SupportedFeatureKey {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "SupportedFeatureKey",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int16.encode(buf, &self.min_version)?;
         } else {
             if self.min_version != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "min_version",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::Int16.encode(buf, &self.max_version)?;
         } else {
             if self.max_version != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "max_version",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -861,30 +909,39 @@ impl Encodable for SupportedFeatureKey {
             total_size += types::CompactString.compute_size(&self.name)?;
         } else {
             if !self.name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "name",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int16.compute_size(&self.min_version)?;
         } else {
             if self.min_version != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "min_version",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::Int16.compute_size(&self.max_version)?;
         } else {
             if self.max_version != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "max_version",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -898,7 +955,10 @@ impl Encodable for SupportedFeatureKey {
 impl Decodable for SupportedFeatureKey {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 4 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "SupportedFeatureKey",
+            });
         }
         let name = if version >= 3 {
             types::CompactString.decode(buf)?

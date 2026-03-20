@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -154,7 +154,10 @@ impl TxnOffsetCommitRequest {
 impl Encodable for TxnOffsetCommitRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequest",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.transactional_id)?;
@@ -172,21 +175,30 @@ impl Encodable for TxnOffsetCommitRequest {
             types::Int32.encode(buf, &self.generation_id)?;
         } else {
             if self.generation_id != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "generation_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.member_id)?;
         } else {
             if &self.member_id != "" {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.group_instance_id)?;
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -197,10 +209,10 @@ impl Encodable for TxnOffsetCommitRequest {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -226,21 +238,30 @@ impl Encodable for TxnOffsetCommitRequest {
             total_size += types::Int32.compute_size(&self.generation_id)?;
         } else {
             if self.generation_id != -1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "generation_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::CompactString.compute_size(&self.member_id)?;
         } else {
             if &self.member_id != "" {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
             total_size += types::CompactString.compute_size(&self.group_instance_id)?;
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -252,10 +273,10 @@ impl Encodable for TxnOffsetCommitRequest {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -269,7 +290,10 @@ impl Encodable for TxnOffsetCommitRequest {
 impl Decodable for TxnOffsetCommitRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequest",
+            });
         }
         let transactional_id = if version >= 3 {
             types::CompactString.decode(buf)?
@@ -429,7 +453,10 @@ impl TxnOffsetCommitRequestPartition {
 impl Encodable for TxnOffsetCommitRequestPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequestPartition",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::Int64.encode(buf, &self.committed_offset)?;
@@ -444,10 +471,10 @@ impl Encodable for TxnOffsetCommitRequestPartition {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -470,10 +497,10 @@ impl Encodable for TxnOffsetCommitRequestPartition {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -487,7 +514,10 @@ impl Encodable for TxnOffsetCommitRequestPartition {
 impl Decodable for TxnOffsetCommitRequestPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequestPartition",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let committed_offset = types::Int64.decode(buf)?;
@@ -591,7 +621,10 @@ impl TxnOffsetCommitRequestTopic {
 impl Encodable for TxnOffsetCommitRequestTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequestTopic",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.name)?;
@@ -606,10 +639,10 @@ impl Encodable for TxnOffsetCommitRequestTopic {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -633,10 +666,10 @@ impl Encodable for TxnOffsetCommitRequestTopic {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -650,7 +683,10 @@ impl Encodable for TxnOffsetCommitRequestTopic {
 impl Decodable for TxnOffsetCommitRequestTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TxnOffsetCommitRequestTopic",
+            });
         }
         let name = if version >= 3 {
             types::CompactString.decode(buf)?

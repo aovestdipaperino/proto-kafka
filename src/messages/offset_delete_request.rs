@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -57,7 +57,10 @@ impl OffsetDeleteRequest {
 impl Encodable for OffsetDeleteRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequest",
+            });
         }
         types::String.encode(buf, &self.group_id)?;
         types::Array(types::Struct { version }).encode(buf, &self.topics)?;
@@ -77,7 +80,10 @@ impl Encodable for OffsetDeleteRequest {
 impl Decodable for OffsetDeleteRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequest",
+            });
         }
         let group_id = types::String.decode(buf)?;
         let topics = types::Array(types::Struct { version }).decode(buf)?;
@@ -125,7 +131,10 @@ impl OffsetDeleteRequestPartition {
 impl Encodable for OffsetDeleteRequestPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequestPartition",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
 
@@ -143,7 +152,10 @@ impl Encodable for OffsetDeleteRequestPartition {
 impl Decodable for OffsetDeleteRequestPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequestPartition",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         Ok(Self { partition_index })
@@ -201,7 +213,10 @@ impl OffsetDeleteRequestTopic {
 impl Encodable for OffsetDeleteRequestTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequestTopic",
+            });
         }
         types::String.encode(buf, &self.name)?;
         types::Array(types::Struct { version }).encode(buf, &self.partitions)?;
@@ -221,7 +236,10 @@ impl Encodable for OffsetDeleteRequestTopic {
 impl Decodable for OffsetDeleteRequestTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetDeleteRequestTopic",
+            });
         }
         let name = types::String.decode(buf)?;
         let partitions = types::Array(types::Struct { version }).decode(buf)?;

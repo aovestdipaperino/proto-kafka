@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,7 +84,10 @@ impl ListOffsetsPartition {
 impl Encodable for ListOffsetsPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsPartition",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         if version >= 4 {
@@ -94,10 +97,10 @@ impl Encodable for ListOffsetsPartition {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -115,10 +118,10 @@ impl Encodable for ListOffsetsPartition {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -132,7 +135,10 @@ impl Encodable for ListOffsetsPartition {
 impl Decodable for ListOffsetsPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsPartition",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let current_leader_epoch = if version >= 4 {
@@ -257,14 +263,20 @@ impl ListOffsetsRequest {
 impl Encodable for ListOffsetsRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsRequest",
+            });
         }
         types::Int32.encode(buf, &self.replica_id)?;
         if version >= 2 {
             types::Int8.encode(buf, &self.isolation_level)?;
         } else {
             if self.isolation_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "isolation_level",
+                    version,
+                });
             }
         }
         if version >= 6 {
@@ -278,10 +290,10 @@ impl Encodable for ListOffsetsRequest {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -296,7 +308,10 @@ impl Encodable for ListOffsetsRequest {
             total_size += types::Int8.compute_size(&self.isolation_level)?;
         } else {
             if self.isolation_level != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "isolation_level",
+                    version,
+                });
             }
         }
         if version >= 6 {
@@ -311,10 +326,10 @@ impl Encodable for ListOffsetsRequest {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -328,7 +343,10 @@ impl Encodable for ListOffsetsRequest {
 impl Decodable for ListOffsetsRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsRequest",
+            });
         }
         let replica_id = types::Int32.decode(buf)?;
         let isolation_level = if version >= 2 {
@@ -436,7 +454,10 @@ impl ListOffsetsTopic {
 impl Encodable for ListOffsetsTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsTopic",
+            });
         }
         if version >= 6 {
             types::CompactString.encode(buf, &self.name)?;
@@ -451,10 +472,10 @@ impl Encodable for ListOffsetsTopic {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -478,10 +499,10 @@ impl Encodable for ListOffsetsTopic {
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -495,7 +516,10 @@ impl Encodable for ListOffsetsTopic {
 impl Decodable for ListOffsetsTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 10 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListOffsetsTopic",
+            });
         }
         let name = if version >= 6 {
             types::CompactString.decode(buf)?

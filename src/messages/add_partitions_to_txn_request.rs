@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -112,13 +112,19 @@ impl AddPartitionsToTxnRequest {
 impl Encodable for AddPartitionsToTxnRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnRequest",
+            });
         }
         if version >= 4 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.transactions)?;
         } else {
             if !self.transactions.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactions",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -129,21 +135,30 @@ impl Encodable for AddPartitionsToTxnRequest {
             }
         } else {
             if !self.v3_and_below_transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_transactional_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
             types::Int64.encode(buf, &self.v3_and_below_producer_id)?;
         } else {
             if self.v3_and_below_producer_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_producer_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
             types::Int16.encode(buf, &self.v3_and_below_producer_epoch)?;
         } else {
             if self.v3_and_below_producer_epoch != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_producer_epoch",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -155,16 +170,19 @@ impl Encodable for AddPartitionsToTxnRequest {
             }
         } else {
             if !self.v3_and_below_topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_topics",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -179,7 +197,10 @@ impl Encodable for AddPartitionsToTxnRequest {
                 types::CompactArray(types::Struct { version }).compute_size(&self.transactions)?;
         } else {
             if !self.transactions.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactions",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -191,21 +212,30 @@ impl Encodable for AddPartitionsToTxnRequest {
             }
         } else {
             if !self.v3_and_below_transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_transactional_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
             total_size += types::Int64.compute_size(&self.v3_and_below_producer_id)?;
         } else {
             if self.v3_and_below_producer_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_producer_id",
+                    version,
+                });
             }
         }
         if version <= 3 {
             total_size += types::Int16.compute_size(&self.v3_and_below_producer_epoch)?;
         } else {
             if self.v3_and_below_producer_epoch != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_producer_epoch",
+                    version,
+                });
             }
         }
         if version <= 3 {
@@ -218,16 +248,19 @@ impl Encodable for AddPartitionsToTxnRequest {
             }
         } else {
             if !self.v3_and_below_topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "v3_and_below_topics",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -241,7 +274,10 @@ impl Encodable for AddPartitionsToTxnRequest {
 impl Decodable for AddPartitionsToTxnRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnRequest",
+            });
         }
         let transactions = if version >= 4 {
             types::CompactArray(types::Struct { version }).decode(buf)?
@@ -368,7 +404,10 @@ impl AddPartitionsToTxnTopic {
 impl Encodable for AddPartitionsToTxnTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTopic",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.name)?;
@@ -383,10 +422,10 @@ impl Encodable for AddPartitionsToTxnTopic {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -409,10 +448,10 @@ impl Encodable for AddPartitionsToTxnTopic {
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -426,7 +465,10 @@ impl Encodable for AddPartitionsToTxnTopic {
 impl Decodable for AddPartitionsToTxnTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTopic",
+            });
         }
         let name = if version >= 3 {
             types::CompactString.decode(buf)?
@@ -566,50 +608,68 @@ impl AddPartitionsToTxnTransaction {
 impl Encodable for AddPartitionsToTxnTransaction {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTransaction",
+            });
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.transactional_id)?;
         } else {
             if !self.transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactional_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Int64.encode(buf, &self.producer_id)?;
         } else {
             if self.producer_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Int16.encode(buf, &self.producer_epoch)?;
         } else {
             if self.producer_epoch != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_epoch",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::Boolean.encode(buf, &self.verify_only)?;
         } else {
             if self.verify_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "verify_only",
+                    version,
+                });
             }
         }
         if version >= 4 {
             types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         } else {
             if !self.topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -623,28 +683,40 @@ impl Encodable for AddPartitionsToTxnTransaction {
             total_size += types::CompactString.compute_size(&self.transactional_id)?;
         } else {
             if !self.transactional_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "transactional_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Int64.compute_size(&self.producer_id)?;
         } else {
             if self.producer_id != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_id",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Int16.compute_size(&self.producer_epoch)?;
         } else {
             if self.producer_epoch != 0 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "producer_epoch",
+                    version,
+                });
             }
         }
         if version >= 4 {
             total_size += types::Boolean.compute_size(&self.verify_only)?;
         } else {
             if self.verify_only {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "verify_only",
+                    version,
+                });
             }
         }
         if version >= 4 {
@@ -652,16 +724,19 @@ impl Encodable for AddPartitionsToTxnTransaction {
                 types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         } else {
             if !self.topics.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topics",
+                    version,
+                });
             }
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -675,7 +750,10 @@ impl Encodable for AddPartitionsToTxnTransaction {
 impl Decodable for AddPartitionsToTxnTransaction {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "AddPartitionsToTxnTransaction",
+            });
         }
         let transactional_id = if version >= 4 {
             types::CompactString.decode(buf)?

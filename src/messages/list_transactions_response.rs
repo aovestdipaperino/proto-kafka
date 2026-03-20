@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl ListTransactionsResponse {
 impl Encodable for ListTransactionsResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListTransactionsResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::Int16.encode(buf, &self.error_code)?;
@@ -106,10 +109,10 @@ impl Encodable for ListTransactionsResponse {
         types::CompactArray(types::Struct { version }).encode(buf, &self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -126,10 +129,10 @@ impl Encodable for ListTransactionsResponse {
             .compute_size(&self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -142,7 +145,10 @@ impl Encodable for ListTransactionsResponse {
 impl Decodable for ListTransactionsResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ListTransactionsResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let error_code = types::Int16.decode(buf)?;
@@ -250,17 +256,20 @@ impl TransactionState {
 impl Encodable for TransactionState {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TransactionState",
+            });
         }
         types::CompactString.encode(buf, &self.transactional_id)?;
         types::Int64.encode(buf, &self.producer_id)?;
         types::CompactString.encode(buf, &self.transaction_state)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -274,10 +283,10 @@ impl Encodable for TransactionState {
         total_size += types::CompactString.compute_size(&self.transaction_state)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -290,7 +299,10 @@ impl Encodable for TransactionState {
 impl Decodable for TransactionState {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TransactionState",
+            });
         }
         let transactional_id = types::CompactString.decode(buf)?;
         let producer_id = types::Int64.decode(buf)?;

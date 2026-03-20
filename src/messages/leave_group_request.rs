@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,7 +84,10 @@ impl LeaveGroupRequest {
 impl Encodable for LeaveGroupRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "LeaveGroupRequest",
+            });
         }
         if version >= 4 {
             types::CompactString.encode(buf, &self.group_id)?;
@@ -95,7 +98,10 @@ impl Encodable for LeaveGroupRequest {
             types::String.encode(buf, &self.member_id)?;
         } else {
             if !self.member_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -106,16 +112,19 @@ impl Encodable for LeaveGroupRequest {
             }
         } else {
             if !self.members.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "members",
+                    version,
+                });
             }
         }
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -134,7 +143,10 @@ impl Encodable for LeaveGroupRequest {
             total_size += types::String.compute_size(&self.member_id)?;
         } else {
             if !self.member_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -147,16 +159,19 @@ impl Encodable for LeaveGroupRequest {
             }
         } else {
             if !self.members.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "members",
+                    version,
+                });
             }
         }
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -170,7 +185,10 @@ impl Encodable for LeaveGroupRequest {
 impl Decodable for LeaveGroupRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "LeaveGroupRequest",
+            });
         }
         let group_id = if version >= 4 {
             types::CompactString.decode(buf)?
@@ -293,7 +311,10 @@ impl MemberIdentity {
 impl Encodable for MemberIdentity {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MemberIdentity",
+            });
         }
         if version >= 3 {
             if version >= 4 {
@@ -303,7 +324,10 @@ impl Encodable for MemberIdentity {
             }
         } else {
             if !self.member_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -314,7 +338,10 @@ impl Encodable for MemberIdentity {
             }
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -323,10 +350,10 @@ impl Encodable for MemberIdentity {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -344,7 +371,10 @@ impl Encodable for MemberIdentity {
             }
         } else {
             if !self.member_id.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "member_id",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -355,7 +385,10 @@ impl Encodable for MemberIdentity {
             }
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version >= 5 {
@@ -364,10 +397,10 @@ impl Encodable for MemberIdentity {
         if version >= 4 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -381,7 +414,10 @@ impl Encodable for MemberIdentity {
 impl Decodable for MemberIdentity {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 5 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "MemberIdentity",
+            });
         }
         let member_id = if version >= 3 {
             if version >= 4 {

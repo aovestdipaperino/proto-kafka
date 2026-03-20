@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -84,7 +84,10 @@ impl DescribeDelegationTokenResponse {
 impl Encodable for DescribeDelegationTokenResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeDelegationTokenResponse",
+            });
         }
         types::Int16.encode(buf, &self.error_code)?;
         if version >= 2 {
@@ -96,10 +99,10 @@ impl Encodable for DescribeDelegationTokenResponse {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -120,10 +123,10 @@ impl Encodable for DescribeDelegationTokenResponse {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -137,7 +140,10 @@ impl Encodable for DescribeDelegationTokenResponse {
 impl Decodable for DescribeDelegationTokenResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeDelegationTokenResponse",
+            });
         }
         let error_code = types::Int16.decode(buf)?;
         let tokens = if version >= 2 {
@@ -346,7 +352,10 @@ impl DescribedDelegationToken {
 impl Encodable for DescribedDelegationToken {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedDelegationToken",
+            });
         }
         if version >= 2 {
             types::CompactString.encode(buf, &self.principal_type)?;
@@ -362,14 +371,20 @@ impl Encodable for DescribedDelegationToken {
             types::CompactString.encode(buf, &self.token_requester_principal_type)?;
         } else {
             if !self.token_requester_principal_type.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "token_requester_principal_type",
+                    version,
+                });
             }
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.token_requester_principal_name)?;
         } else {
             if !self.token_requester_principal_name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "token_requester_principal_name",
+                    version,
+                });
             }
         }
         types::Int64.encode(buf, &self.issue_timestamp)?;
@@ -393,10 +408,10 @@ impl Encodable for DescribedDelegationToken {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -421,7 +436,10 @@ impl Encodable for DescribedDelegationToken {
                 types::CompactString.compute_size(&self.token_requester_principal_type)?;
         } else {
             if !self.token_requester_principal_type.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "token_requester_principal_type",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -429,7 +447,10 @@ impl Encodable for DescribedDelegationToken {
                 types::CompactString.compute_size(&self.token_requester_principal_name)?;
         } else {
             if !self.token_requester_principal_name.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "token_requester_principal_name",
+                    version,
+                });
             }
         }
         total_size += types::Int64.compute_size(&self.issue_timestamp)?;
@@ -454,10 +475,10 @@ impl Encodable for DescribedDelegationToken {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -471,7 +492,10 @@ impl Encodable for DescribedDelegationToken {
 impl Decodable for DescribedDelegationToken {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedDelegationToken",
+            });
         }
         let principal_type = if version >= 2 {
             types::CompactString.decode(buf)?
@@ -613,7 +637,10 @@ impl DescribedDelegationTokenRenewer {
 impl Encodable for DescribedDelegationTokenRenewer {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedDelegationTokenRenewer",
+            });
         }
         if version >= 2 {
             types::CompactString.encode(buf, &self.principal_type)?;
@@ -628,10 +655,10 @@ impl Encodable for DescribedDelegationTokenRenewer {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -654,10 +681,10 @@ impl Encodable for DescribedDelegationTokenRenewer {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -671,7 +698,10 @@ impl Encodable for DescribedDelegationTokenRenewer {
 impl Decodable for DescribedDelegationTokenRenewer {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribedDelegationTokenRenewer",
+            });
         }
         let principal_type = if version >= 2 {
             types::CompactString.decode(buf)?

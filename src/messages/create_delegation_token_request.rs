@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -70,7 +70,10 @@ impl CreatableRenewers {
 impl Encodable for CreatableRenewers {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableRenewers",
+            });
         }
         if version >= 2 {
             types::CompactString.encode(buf, &self.principal_type)?;
@@ -85,10 +88,10 @@ impl Encodable for CreatableRenewers {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -111,10 +114,10 @@ impl Encodable for CreatableRenewers {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -128,7 +131,10 @@ impl Encodable for CreatableRenewers {
 impl Decodable for CreatableRenewers {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreatableRenewers",
+            });
         }
         let principal_type = if version >= 2 {
             types::CompactString.decode(buf)?
@@ -254,7 +260,10 @@ impl CreateDelegationTokenRequest {
 impl Encodable for CreateDelegationTokenRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateDelegationTokenRequest",
+            });
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.owner_principal_type)?;
@@ -265,7 +274,10 @@ impl Encodable for CreateDelegationTokenRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "owner_principal_type",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -277,7 +289,10 @@ impl Encodable for CreateDelegationTokenRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "owner_principal_name",
+                    version,
+                });
             }
         }
         if version >= 2 {
@@ -289,10 +304,10 @@ impl Encodable for CreateDelegationTokenRequest {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -311,7 +326,10 @@ impl Encodable for CreateDelegationTokenRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "owner_principal_type",
+                    version,
+                });
             }
         }
         if version >= 3 {
@@ -323,7 +341,10 @@ impl Encodable for CreateDelegationTokenRequest {
                 .map(|x| x.is_empty())
                 .unwrap_or_default()
             {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "owner_principal_name",
+                    version,
+                });
             }
         }
         if version >= 2 {
@@ -336,10 +357,10 @@ impl Encodable for CreateDelegationTokenRequest {
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -353,7 +374,10 @@ impl Encodable for CreateDelegationTokenRequest {
 impl Decodable for CreateDelegationTokenRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 1 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "CreateDelegationTokenRequest",
+            });
         }
         let owner_principal_type = if version >= 3 {
             types::CompactString.decode(buf)?

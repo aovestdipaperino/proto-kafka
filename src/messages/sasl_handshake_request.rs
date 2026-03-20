@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -43,7 +43,10 @@ impl SaslHandshakeRequest {
 impl Encodable for SaslHandshakeRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "SaslHandshakeRequest",
+            });
         }
         types::String.encode(buf, &self.mechanism)?;
 
@@ -61,7 +64,10 @@ impl Encodable for SaslHandshakeRequest {
 impl Decodable for SaslHandshakeRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "SaslHandshakeRequest",
+            });
         }
         let mechanism = types::String.decode(buf)?;
         Ok(Self { mechanism })

@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -126,7 +126,10 @@ impl OffsetCommitRequest {
 impl Encodable for OffsetCommitRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequest",
+            });
         }
         if version >= 8 {
             types::CompactString.encode(buf, &self.group_id)?;
@@ -147,7 +150,10 @@ impl Encodable for OffsetCommitRequest {
             }
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version <= 4 {
@@ -161,10 +167,10 @@ impl Encodable for OffsetCommitRequest {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -193,7 +199,10 @@ impl Encodable for OffsetCommitRequest {
             }
         } else {
             if !self.group_instance_id.is_none() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "group_instance_id",
+                    version,
+                });
             }
         }
         if version <= 4 {
@@ -208,10 +217,10 @@ impl Encodable for OffsetCommitRequest {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -225,7 +234,10 @@ impl Encodable for OffsetCommitRequest {
 impl Decodable for OffsetCommitRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequest",
+            });
         }
         let group_id = if version >= 8 {
             types::CompactString.decode(buf)?
@@ -379,7 +391,10 @@ impl OffsetCommitRequestPartition {
 impl Encodable for OffsetCommitRequestPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequestPartition",
+            });
         }
         types::Int32.encode(buf, &self.partition_index)?;
         types::Int64.encode(buf, &self.committed_offset)?;
@@ -394,10 +409,10 @@ impl Encodable for OffsetCommitRequestPartition {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -420,10 +435,10 @@ impl Encodable for OffsetCommitRequestPartition {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -437,7 +452,10 @@ impl Encodable for OffsetCommitRequestPartition {
 impl Decodable for OffsetCommitRequestPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequestPartition",
+            });
         }
         let partition_index = types::Int32.decode(buf)?;
         let committed_offset = types::Int64.decode(buf)?;
@@ -555,7 +573,10 @@ impl OffsetCommitRequestTopic {
 impl Encodable for OffsetCommitRequestTopic {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequestTopic",
+            });
         }
         if version >= 8 {
             types::CompactString.encode(buf, &self.name)?;
@@ -570,10 +591,10 @@ impl Encodable for OffsetCommitRequestTopic {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -597,10 +618,10 @@ impl Encodable for OffsetCommitRequestTopic {
         if version >= 8 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
-                bail!(
-                    "Too many tagged fields to encode ({} fields)",
-                    num_tagged_fields
-                );
+                return Err(ProtoError::FieldTooLarge {
+                    field: "tagged fields count",
+                    size: num_tagged_fields,
+                });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -614,7 +635,10 @@ impl Encodable for OffsetCommitRequestTopic {
 impl Decodable for OffsetCommitRequestTopic {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 2 || version > 9 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "OffsetCommitRequestTopic",
+            });
         }
         let name = if version >= 8 {
             types::CompactString.decode(buf)?

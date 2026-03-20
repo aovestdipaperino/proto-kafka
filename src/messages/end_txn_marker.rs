@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -42,7 +42,10 @@ impl EndTxnMarker {
 impl Encodable for EndTxnMarker {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "EndTxnMarker",
+            });
         }
         types::Int32.encode(buf, &self.coordinator_epoch)?;
 
@@ -59,7 +62,10 @@ impl Encodable for EndTxnMarker {
 impl Decodable for EndTxnMarker {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version != 0 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "EndTxnMarker",
+            });
         }
         let coordinator_epoch = types::Int32.decode(buf)?;
         Ok(Self { coordinator_epoch })

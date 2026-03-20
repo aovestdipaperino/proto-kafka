@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -112,7 +112,10 @@ impl DescribeClusterBroker {
 impl Encodable for DescribeClusterBroker {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeClusterBroker",
+            });
         }
         types::Int32.encode(buf, &self.broker_id)?;
         types::CompactString.encode(buf, &self.host)?;
@@ -122,15 +125,18 @@ impl Encodable for DescribeClusterBroker {
             types::Boolean.encode(buf, &self.is_fenced)?;
         } else {
             if self.is_fenced {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_fenced",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -147,15 +153,18 @@ impl Encodable for DescribeClusterBroker {
             total_size += types::Boolean.compute_size(&self.is_fenced)?;
         } else {
             if self.is_fenced {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "is_fenced",
+                    version,
+                });
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -168,7 +177,10 @@ impl Encodable for DescribeClusterBroker {
 impl Decodable for DescribeClusterBroker {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeClusterBroker",
+            });
         }
         let broker_id = types::Int32.decode(buf)?;
         let host = types::CompactString.decode(buf)?;
@@ -353,7 +365,10 @@ impl DescribeClusterResponse {
 impl Encodable for DescribeClusterResponse {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeClusterResponse",
+            });
         }
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::Int16.encode(buf, &self.error_code)?;
@@ -362,7 +377,10 @@ impl Encodable for DescribeClusterResponse {
             types::Int8.encode(buf, &self.endpoint_type)?;
         } else {
             if self.endpoint_type != 1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "endpoint_type",
+                    version,
+                });
             }
         }
         types::CompactString.encode(buf, &self.cluster_id)?;
@@ -371,10 +389,10 @@ impl Encodable for DescribeClusterResponse {
         types::Int32.encode(buf, &self.cluster_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -390,7 +408,10 @@ impl Encodable for DescribeClusterResponse {
             total_size += types::Int8.compute_size(&self.endpoint_type)?;
         } else {
             if self.endpoint_type != 1 {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "endpoint_type",
+                    version,
+                });
             }
         }
         total_size += types::CompactString.compute_size(&self.cluster_id)?;
@@ -399,10 +420,10 @@ impl Encodable for DescribeClusterResponse {
         total_size += types::Int32.compute_size(&self.cluster_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -415,7 +436,10 @@ impl Encodable for DescribeClusterResponse {
 impl Decodable for DescribeClusterResponse {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 2 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "DescribeClusterResponse",
+            });
         }
         let throttle_time_ms = types::Int32.decode(buf)?;
         let error_code = types::Int16.decode(buf)?;

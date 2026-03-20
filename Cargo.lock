@@ -1466,7 +1466,6 @@ dependencies = [
 name = "proto-kafka"
 version = "0.16.1"
 dependencies = [
- "anyhow",
  "bytes",
  "crc",
  "crc32c",

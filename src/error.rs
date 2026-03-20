@@ -504,10 +504,6 @@ pub enum ProtoError {
         /// The size in bytes.
         size: usize,
     },
-
-    /// Catch-all for errors not yet migrated to `ProtoError` (temporary).
-    #[error("{0}")]
-    Legacy(String),
 }
 
 impl From<crate::protocol::buf::NotEnoughBytesError> for ProtoError {
@@ -516,12 +512,9 @@ impl From<crate::protocol::buf::NotEnoughBytesError> for ProtoError {
     }
 }
 
-impl From<anyhow::Error> for ProtoError {
-    fn from(err: anyhow::Error) -> Self {
-        match err.downcast::<ProtoError>() {
-            Ok(proto_err) => proto_err,
-            Err(other) => ProtoError::Legacy(other.to_string()),
-        }
+impl From<bytes::TryGetError> for ProtoError {
+    fn from(_: bytes::TryGetError) -> Self {
+        ProtoError::NotEnoughBytes
     }
 }
 

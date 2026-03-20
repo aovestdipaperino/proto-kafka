@@ -462,6 +462,7 @@ fn write_fail_if_field_set<W: Write>(
     field: &PreparedField,
 ) -> Result<(), Error> {
     let var_name = field.var_name();
+    let field_name = &field.name;
 
     let is_not_default = field
         .default
@@ -471,7 +472,7 @@ fn write_fail_if_field_set<W: Write>(
     w.block(|w| {
         write!(
             w,
-            r#"bail!("A field is set that is not available on the selected protocol version");"#
+            r#"return Err(ProtoError::InvalidFieldForVersion {{ field: "{field_name}", version }});"#
         )?;
         Ok(())
     })
@@ -481,10 +482,14 @@ fn write_size_check<W: Write, T: Display>(
     w: &mut CodeWriter<W>,
     expr: T,
     t: &str,
-    msg: &str,
+    field: &str,
 ) -> Result<(), Error> {
     writeln!(w, "if {} > std::{}::MAX as usize {{", expr, t)?;
-    writeln!(w, "    bail!({:?}, {});", msg, expr)?;
+    writeln!(
+        w,
+        "    return Err(ProtoError::FieldTooLarge {{ field: {:?}, size: {} }});",
+        field, expr
+    )?;
     writeln!(w, "}}")?;
     Ok(())
 }
@@ -555,12 +560,7 @@ fn write_encode_tag_buffer<W: Write>(
                 )?;
             }
 
-            write_size_check(
-                w,
-                "num_tagged_fields",
-                "u32",
-                "Too many tagged fields to encode ({} fields)",
-            )?;
+            write_size_check(w, "num_tagged_fields", "u32", "tagged fields count")?;
             write_encode_or_compute(
                 w,
                 "types::UnsignedVarInt",
@@ -681,12 +681,7 @@ fn write_encode_tag_buffer_inner<W: Write>(
             )?;
         }
         writeln!(w, ";")?;
-        write_size_check(
-            w,
-            "computed_size",
-            "u32",
-            "Tagged field is too large to encode ({} bytes)",
-        )?;
+        write_size_check(w, "computed_size", "u32", "tagged field")?;
         write_encode_or_compute(w, "types::UnsignedVarInt", k, compute_size)?;
         writeln!(w)?;
         write_encode_or_compute(
@@ -910,8 +905,7 @@ fn write_decode_tag_buffer<W: Write>(
                                     |w| {
                                         writeln!(
                                             w,
-                                            "bail!({:?}, tag, version);",
-                                            "Tag {} is not valid for version {}"
+                                            "return Err(ProtoError::InvalidTagForVersion {{ tag: tag as i32, version }});"
                                         )?;
                                         Ok(())
                                     },
@@ -1304,13 +1298,14 @@ impl PreparedStruct {
     }
 
     fn write_version_validation<W: Write>(&self, w: &mut CodeWriter<W>) -> Result<(), Error> {
+        let name = &self.name;
         match self.valid_versions {
             VersionSpec::None => {}
             VersionSpec::Exact(exact) => {
                 writeln!(w, "if version != {exact} {{")?;
                 writeln!(
                     w,
-                    "    bail!(\"specified version not supported by this message type\");"
+                    "    return Err(ProtoError::UnsupportedVersion {{ version, message_type: \"{name}\" }});"
                 )?;
                 writeln!(w, "}}")?;
             }
@@ -1318,7 +1313,7 @@ impl PreparedStruct {
                 writeln!(w, "if version >= {since} {{")?;
                 writeln!(
                     w,
-                    "    bail!(\"specified version not supported by this message type\");"
+                    "    return Err(ProtoError::UnsupportedVersion {{ version, message_type: \"{name}\" }});"
                 )?;
                 writeln!(w, "}}")?;
             }
@@ -1326,7 +1321,7 @@ impl PreparedStruct {
                 writeln!(w, "if version < {start} || version > {end} {{")?;
                 writeln!(
                     w,
-                    "    bail!(\"specified version not supported by this message type\");"
+                    "    return Err(ProtoError::UnsupportedVersion {{ version, message_type: \"{name}\" }});"
                 )?;
                 writeln!(w, "}}")?;
             }
@@ -1350,7 +1345,7 @@ fn write_file_header<W: Write>(w: &mut CodeWriter<W>, name: &str) -> Result<(), 
     writeln!(w)?;
     writeln!(w, "use bytes::Bytes;")?;
     writeln!(w, "use uuid::Uuid;")?;
-    writeln!(w, "use anyhow::{{bail, Result}};")?;
+    writeln!(w, "use crate::error::{{ProtoError, Result}};")?;
     writeln!(w)?;
     writeln!(w, "use crate::protocol::{{")?;
     writeln!(

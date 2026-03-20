@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -126,7 +126,10 @@ impl BrokerHeartbeatRequest {
 impl Encodable for BrokerHeartbeatRequest {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerHeartbeatRequest",
+            });
         }
         types::Int32.encode(buf, &self.broker_id)?;
         types::Int64.encode(buf, &self.broker_epoch)?;
@@ -140,10 +143,10 @@ impl Encodable for BrokerHeartbeatRequest {
             }
         }
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
         if version >= 1 {
@@ -151,10 +154,10 @@ impl Encodable for BrokerHeartbeatRequest {
                 let computed_size =
                     types::CompactArray(types::Uuid).compute_size(&self.offline_log_dirs)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 types::UnsignedVarInt.encode(buf, 0)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -178,10 +181,10 @@ impl Encodable for BrokerHeartbeatRequest {
             }
         }
         if num_tagged_fields > std::u32::MAX as usize {
-            bail!(
-                "Too many tagged fields to encode ({} fields)",
-                num_tagged_fields
-            );
+            return Err(ProtoError::FieldTooLarge {
+                field: "tagged fields count",
+                size: num_tagged_fields,
+            });
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
         if version >= 1 {
@@ -189,10 +192,10 @@ impl Encodable for BrokerHeartbeatRequest {
                 let computed_size =
                     types::CompactArray(types::Uuid).compute_size(&self.offline_log_dirs)?;
                 if computed_size > std::u32::MAX as usize {
-                    bail!(
-                        "Tagged field is too large to encode ({} bytes)",
-                        computed_size
-                    );
+                    return Err(ProtoError::FieldTooLarge {
+                        field: "tagged field",
+                        size: computed_size,
+                    });
                 }
                 total_size += types::UnsignedVarInt.compute_size(0)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
@@ -208,7 +211,10 @@ impl Encodable for BrokerHeartbeatRequest {
 impl Decodable for BrokerHeartbeatRequest {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 1 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "BrokerHeartbeatRequest",
+            });
         }
         let broker_id = types::Int32.decode(buf)?;
         let broker_epoch = types::Int64.decode(buf)?;
@@ -226,7 +232,10 @@ impl Decodable for BrokerHeartbeatRequest {
                     if version >= 1 {
                         offline_log_dirs = types::CompactArray(types::Uuid).decode(buf)?;
                     } else {
-                        bail!("Tag {} is not valid for version {}", tag, version);
+                        return Err(ProtoError::InvalidTagForVersion {
+                            tag: tag as i32,
+                            version,
+                        });
                     }
                 }
                 _ => {

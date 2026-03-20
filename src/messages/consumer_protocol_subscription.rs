@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+use crate::error::{ProtoError, Result};
 use bytes::Bytes;
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ impl ConsumerProtocolSubscription {
 impl Encodable for ConsumerProtocolSubscription {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerProtocolSubscription",
+            });
         }
         types::Array(types::String).encode(buf, &self.topics)?;
         types::Bytes.encode(buf, &self.user_data)?;
@@ -136,7 +139,10 @@ impl Encodable for ConsumerProtocolSubscription {
 impl Decodable for ConsumerProtocolSubscription {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "ConsumerProtocolSubscription",
+            });
         }
         let topics = types::Array(types::String).decode(buf)?;
         let user_data = types::Bytes.decode(buf)?;
@@ -221,20 +227,29 @@ impl TopicPartition {
 impl Encodable for TopicPartition {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, version: i16) -> Result<()> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartition",
+            });
         }
         if version >= 1 {
             types::String.encode(buf, &self.topic)?;
         } else {
             if !self.topic.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic",
+                    version,
+                });
             }
         }
         if version >= 1 {
             types::Array(types::Int32).encode(buf, &self.partitions)?;
         } else {
             if !self.partitions.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partitions",
+                    version,
+                });
             }
         }
 
@@ -246,14 +261,20 @@ impl Encodable for TopicPartition {
             total_size += types::String.compute_size(&self.topic)?;
         } else {
             if !self.topic.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "topic",
+                    version,
+                });
             }
         }
         if version >= 1 {
             total_size += types::Array(types::Int32).compute_size(&self.partitions)?;
         } else {
             if !self.partitions.is_empty() {
-                bail!("A field is set that is not available on the selected protocol version");
+                return Err(ProtoError::InvalidFieldForVersion {
+                    field: "partitions",
+                    version,
+                });
             }
         }
 
@@ -264,7 +285,10 @@ impl Encodable for TopicPartition {
 impl Decodable for TopicPartition {
     fn decode<B: ByteBuf>(buf: &mut B, version: i16) -> Result<Self> {
         if version < 0 || version > 3 {
-            bail!("specified version not supported by this message type");
+            return Err(ProtoError::UnsupportedVersion {
+                version,
+                message_type: "TopicPartition",
+            });
         }
         let topic = if version >= 1 {
             types::String.decode(buf)?
