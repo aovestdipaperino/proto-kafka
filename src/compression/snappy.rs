@@ -1,6 +1,6 @@
 use crate::error::{ProtoError, Result};
 use bytes::{Buf as _, BufMut as _, Bytes, BytesMut};
-use snap::raw::{decompress_len, Decoder, Encoder, max_compress_len};
+use snap::raw::{decompress_len, max_compress_len, Decoder, Encoder};
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
 
@@ -24,6 +24,7 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
     where
         F: FnOnce(&mut Self::BufMut) -> Result<R>,
     {
+        let offset_before = compressed.offset();
         let mut uncompressed = BytesMut::new();
         let res = f(&mut uncompressed)?;
         // See https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes
@@ -44,7 +45,11 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
                     &uncompressed.split_to(uncompressed_block_size),
                     compressed.gap_buf(compressed_block),
                 )
-                .map_err(|e| ProtoError::Compression { operation: "compress", codec: "snappy", source: Box::new(e) })?;
+                .map_err(|e| ProtoError::Compression {
+                    operation: "compress",
+                    codec: "snappy",
+                    source: Box::new(e),
+                })?;
             // Truncate down to the final compressed size
             compressed.seek(block_offset + bytes_written);
 
@@ -52,6 +57,14 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
             #[allow(clippy::cast_possible_truncation)]
             num_written_buf.put_u32(bytes_written as u32);
         }
+        debug_assert!(
+            compressed.offset() >= offset_before + MAGIC_HEADER.len(),
+            "compressed output must contain at least the magic header"
+        );
+        debug_assert!(
+            compressed.offset() > offset_before,
+            "compress must write some output bytes"
+        );
         Ok(res)
     }
 }
@@ -64,12 +77,19 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
     where
         F: FnOnce(&mut Self::Buf) -> Result<R>,
     {
+        debug_assert!(
+            compressed.has_remaining(),
+            "compressed input must not be empty"
+        );
         // See https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes
         if !compressed.has_remaining() {
             return Err(ProtoError::Compression {
                 operation: "decompress",
                 codec: "snappy",
-                source: Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "expected some bytes in snappy stream")),
+                source: Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "expected some bytes in snappy stream",
+                )),
             });
         }
 
@@ -81,27 +101,48 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
             .is_none_or(|magic| *magic != MAGIC_HEADER[..])
         {
             let compressed = compressed.copy_to_bytes(compressed.remaining());
-            let actual_len = decompress_len(&compressed).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
+            let actual_len = decompress_len(&compressed).map_err(|e| ProtoError::Compression {
+                operation: "decompress",
+                codec: "snappy",
+                source: Box::new(e),
+            })?;
             let mut tmp = BytesMut::zeroed(actual_len);
             Decoder::new()
                 .decompress(&compressed, &mut tmp)
-                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
+                .map_err(|e| ProtoError::Compression {
+                    operation: "decompress",
+                    codec: "snappy",
+                    source: Box::new(e),
+                })?;
 
             return f(&mut tmp.into());
         }
 
         let mut uncompressed = BytesMut::new();
         while compressed.has_remaining() {
-            let compressed_block_size = compressed
-                .try_get_u32()
-                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?
-                as usize;
-            let compressed_block = compressed
-                .try_get_bytes(compressed_block_size)
-                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
+            let compressed_block_size =
+                compressed
+                    .try_get_u32()
+                    .map_err(|e| ProtoError::Compression {
+                        operation: "decompress",
+                        codec: "snappy",
+                        source: Box::new(e),
+                    })? as usize;
+            let compressed_block =
+                compressed
+                    .try_get_bytes(compressed_block_size)
+                    .map_err(|e| ProtoError::Compression {
+                        operation: "decompress",
+                        codec: "snappy",
+                        source: Box::new(e),
+                    })?;
 
-            let uncompressed_block_length = decompress_len(&compressed_block)
-                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
+            let uncompressed_block_length =
+                decompress_len(&compressed_block).map_err(|e| ProtoError::Compression {
+                    operation: "decompress",
+                    codec: "snappy",
+                    source: Box::new(e),
+                })?;
             let uncompressed_block_start = uncompressed.len();
             uncompressed.resize(
                 uncompressed_block_start.saturating_add(uncompressed_block_length),
@@ -113,9 +154,17 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
                     &compressed_block,
                     &mut uncompressed[uncompressed_block_start..],
                 )
-                .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "snappy", source: Box::new(e) })?;
+                .map_err(|e| ProtoError::Compression {
+                    operation: "decompress",
+                    codec: "snappy",
+                    source: Box::new(e),
+                })?;
         }
 
+        debug_assert!(
+            !uncompressed.is_empty(),
+            "decompressed output must not be empty for non-empty input"
+        );
         f(&mut uncompressed.into())
     }
 }

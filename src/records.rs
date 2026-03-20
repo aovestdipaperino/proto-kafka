@@ -234,6 +234,15 @@ impl RecordBatchEncoder {
         I::IntoIter: Clone,
         CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
     {
+        debug_assert!(
+            (0..=2).contains(&options.version),
+            "record batch version must be 0-2, got {}",
+            options.version
+        );
+        debug_assert!(
+            matches!(options.compression, Compression::None | Compression::Gzip | Compression::Snappy | Compression::Lz4 | Compression::Zstd),
+            "compression must be a known variant"
+        );
         let records = records.into_iter();
         match options.version {
             0..=1 => Err(ProtoError::UnsupportedMessageSetVersion {
@@ -302,6 +311,12 @@ impl RecordBatchEncoder {
             .sequence
             .wrapping_sub((first.offset - min_offset) as i32);
 
+        debug_assert!(num_records > 0, "batch must contain at least one record");
+        debug_assert!(
+            min_offset <= max_offset,
+            "min_offset ({min_offset}) must be <= max_offset ({max_offset})"
+        );
+
         Some((
             first,
             BatchBounds {
@@ -324,6 +339,12 @@ impl RecordBatchEncoder {
         bounds: &BatchBounds,
         options: &RecordEncodeOptions,
     ) -> Result<(TypedGap<gap::I32>, TypedGap<gap::U32>, usize, usize)> {
+        debug_assert!(
+            options.version == 2,
+            "only v2 batch headers are supported, got v{}",
+            options.version
+        );
+        let header_start = buf.offset();
         types::Int64.encode(buf, bounds.min_offset)?;
 
         let size_gap = buf.put_typed_gap(gap::I32);
@@ -358,6 +379,10 @@ impl RecordBatchEncoder {
         }
         types::Int32.encode(buf, bounds.num_records as i32)?;
 
+        debug_assert!(
+            buf.offset() > header_start,
+            "header must write some bytes"
+        );
         Ok((size_gap, crc_gap, batch_start, content_start))
     }
 
@@ -372,6 +397,11 @@ impl RecordBatchEncoder {
         I: Iterator<Item = &'a Record> + Clone,
         CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
     {
+        debug_assert!(
+            options.version == 2,
+            "only v2 batches are supported, got v{}",
+            options.version
+        );
         let Some((first_record, bounds)) = Self::compute_batch_bounds(records) else {
             return Ok(false);
         };
@@ -425,6 +455,10 @@ impl RecordBatchEncoder {
 
         // Back-fill size and CRC gaps
         let batch_end = buf.offset();
+        debug_assert!(
+            batch_end > batch_start,
+            "batch must contain data (end={batch_end}, start={batch_start})"
+        );
         let batch_size = batch_end - batch_start;
         if batch_size > i32::MAX as usize {
             return Err(ProtoError::BatchTooLarge { size: batch_size });
@@ -492,10 +526,18 @@ impl Iterator for RecordIterator {
 
 impl RecordIterator {
     fn new(buf: &mut Bytes) -> Result<Self> {
+        debug_assert!(
+            !buf.is_empty(),
+            "buffer must have remaining bytes to create a RecordIterator"
+        );
         // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let (batch_decode_info, record_buf) = RecordBatchDecoder::decode_batch_info(buf, version)?;
 
+        debug_assert!(
+            batch_decode_info.record_count > 0 || record_buf.is_empty(),
+            "zero-record batch should have empty record buffer"
+        );
         Ok(RecordIterator {
             buf: record_buf,
             source: buf.clone(),
@@ -505,6 +547,10 @@ impl RecordIterator {
     }
 
     fn try_load_next_batch(&mut self) -> Result<()> {
+        debug_assert!(
+            !self.source.is_empty(),
+            "source must have remaining bytes to load next batch"
+        );
         // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version =
             self.source
@@ -514,6 +560,10 @@ impl RecordIterator {
         self.buf = record_buf;
         self.batch_decode_info = batch_decode_info;
         self.current = 0;
+        debug_assert!(
+            self.current == 0,
+            "current must be reset to 0 after loading a new batch"
+        );
         Ok(())
     }
 }
@@ -588,6 +638,7 @@ impl RecordBatchDecoder {
     }
 
     fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
+        debug_assert!(version == 2, "only v2 batch decoding is supported, got v{version}");
         // Base offset
         let min_offset = types::Int64.decode(buf)?;
 
@@ -673,6 +724,10 @@ impl RecordBatchDecoder {
             });
         }
         let record_count = record_count as usize;
+        debug_assert!(
+            i32::try_from(record_count).is_ok(),
+            "record_count ({record_count}) must fit in i32"
+        );
 
         Ok((
             BatchDecodeInfo {
@@ -714,6 +769,8 @@ impl RecordBatchDecoder {
     where
         F: Fn(&mut bytes::Bytes, Compression) -> Result<B>,
     {
+        debug_assert!(version == 2, "only v2 batch decoding is supported, got v{version}");
+        let records_before = records.len();
         let (batch_decode_info, mut buf) = Self::decode_batch_info(buf, version)?;
         let compression = batch_decode_info.compression;
 
@@ -756,6 +813,10 @@ impl RecordBatchDecoder {
             }
         }
 
+        debug_assert!(
+            records.len() >= records_before,
+            "decoding must not shrink the records vec"
+        );
         Ok(compression)
     }
 }
@@ -767,6 +828,11 @@ fn encode_optional_bytes<B: ByteBufMut>(
     data: Option<&[u8]>,
     field_name: &'static str,
 ) -> Result<()> {
+    debug_assert!(!field_name.is_empty(), "field_name must not be empty");
+    debug_assert!(
+        data.as_ref().is_none_or(|d| i32::try_from(d.len()).is_ok()),
+        "data length must fit in i32 for field '{field_name}'"
+    );
     if let Some(d) = data {
         if d.len() > i32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
@@ -787,6 +853,15 @@ fn encode_headers<B: ByteBufMut>(
     buf: &mut B,
     headers: &IndexMap<StrBytes, Option<Bytes>>,
 ) -> Result<()> {
+    debug_assert!(
+        i32::try_from(headers.len()).is_ok(),
+        "headers count ({}) must fit in i32",
+        headers.len()
+    );
+    debug_assert!(
+        headers.keys().all(|k| !k.is_empty()),
+        "all header keys should be non-empty"
+    );
     if headers.len() > i32::MAX as usize {
         return Err(ProtoError::FieldTooLarge {
             field: "record headers count",
@@ -806,6 +881,8 @@ fn decode_optional_bytes<B: ByteBuf>(
     buf: &mut B,
     field_name: &'static str,
 ) -> Result<Option<Bytes>> {
+    debug_assert!(!field_name.is_empty(), "field_name must not be empty");
+    debug_assert!(buf.has_remaining(), "buffer must have remaining bytes for field '{field_name}'");
     let len: i32 = types::VarInt.decode(buf)?;
     match len.cmp(&-1) {
         Ordering::Less => Err(ProtoError::NegativeLength {
@@ -819,6 +896,7 @@ fn decode_optional_bytes<B: ByteBuf>(
 
 /// Decode the headers map from a buffer.
 fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<Bytes>>> {
+    debug_assert!(buf.has_remaining(), "buffer must have remaining bytes to decode headers");
     let num_headers: i32 = types::VarInt.decode(buf)?;
     if num_headers < 0 {
         return Err(ProtoError::NegativeLength {
@@ -840,11 +918,21 @@ fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<B
         let value = decode_optional_bytes(buf, "record header value length")?;
         headers.insert(key, value);
     }
+    debug_assert!(
+        headers.len() == num_headers,
+        "decoded header count ({}) must match declared count ({num_headers})",
+        headers.len()
+    );
     Ok(headers)
 }
 
 /// Compute the encoded size of an optional bytes field.
 fn compute_optional_bytes_size(data: Option<&[u8]>, field_name: &'static str) -> Result<usize> {
+    debug_assert!(!field_name.is_empty(), "field_name must not be empty");
+    debug_assert!(
+        data.as_ref().is_none_or(|d| i32::try_from(d.len()).is_ok()),
+        "data length must fit in i32 for field '{field_name}'"
+    );
     if let Some(d) = data {
         if d.len() > i32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
@@ -860,6 +948,15 @@ fn compute_optional_bytes_size(data: Option<&[u8]>, field_name: &'static str) ->
 
 /// Compute the encoded size of the headers map.
 fn compute_headers_size(headers: &IndexMap<StrBytes, Option<Bytes>>) -> Result<usize> {
+    debug_assert!(
+        i32::try_from(headers.len()).is_ok(),
+        "headers count ({}) must fit in i32",
+        headers.len()
+    );
+    debug_assert!(
+        headers.keys().all(|k| !k.is_empty()),
+        "all header keys should be non-empty"
+    );
     if headers.len() > i32::MAX as usize {
         return Err(ProtoError::FieldTooLarge {
             field: "record headers count",
@@ -882,6 +979,17 @@ impl Record {
         min_timestamp: i64,
         options: &RecordEncodeOptions,
     ) -> Result<()> {
+        debug_assert!(
+            options.version == 2,
+            "only v2 record encoding is supported, got v{}",
+            options.version
+        );
+        debug_assert!(
+            self.offset >= min_offset,
+            "record offset ({}) must be >= min_offset ({})",
+            self.offset,
+            min_offset
+        );
         let size = self.compute_size_new(min_offset, min_timestamp, options)?;
         if size > i32::MAX as usize {
             return Err(ProtoError::RecordTooLarge { size });

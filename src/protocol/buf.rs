@@ -402,10 +402,7 @@ impl ByteBufMut for SegmentedBuf {
             }
             pos += seg_len;
         }
-        panic!(
-            "range {:?} out of bounds (total {})",
-            r, self.total_len
-        );
+        panic!("range {:?} out of bounds (total {})", r, self.total_len);
     }
 
     fn put_shared_bytes(&mut self, bytes: Bytes) {
@@ -413,6 +410,7 @@ impl ByteBufMut for SegmentedBuf {
             return;
         }
         let len = bytes.len();
+        debug_assert!(len > 0, "bytes must be non-empty after early return");
         if let Some(Segment::Inline(b)) = self.segments.last() {
             if b.is_empty() {
                 self.segments.pop();
@@ -420,6 +418,12 @@ impl ByteBufMut for SegmentedBuf {
         }
         self.segments.push(Segment::Shared(bytes));
         self.total_len += len;
+        debug_assert!(
+            self.total_len >= len,
+            "total_len ({}) must include new bytes ({})",
+            self.total_len,
+            len
+        );
     }
 }
 
@@ -429,15 +433,26 @@ impl Buf for SegmentedBuf {
     }
 
     fn chunk(&self) -> &[u8] {
+        debug_assert!(
+            self.consumed <= self.total_len,
+            "consumed ({}) must not exceed total_len ({})",
+            self.consumed,
+            self.total_len
+        );
         let mut pos = 0;
         for seg in &self.segments {
             let seg_len = seg.len();
             if self.consumed < pos + seg_len {
                 let local_offset = self.consumed - pos;
-                return match seg {
+                let result = match seg {
                     Segment::Inline(b) => &b[local_offset..],
                     Segment::Shared(b) => &b[local_offset..],
                 };
+                debug_assert!(
+                    !result.is_empty() || self.remaining() == 0,
+                    "chunk must be non-empty when there are remaining bytes"
+                );
+                return result;
             }
             pos += seg_len;
         }
@@ -445,6 +460,12 @@ impl Buf for SegmentedBuf {
     }
 
     fn advance(&mut self, cnt: usize) {
+        debug_assert!(
+            self.consumed <= self.total_len,
+            "consumed ({}) must not exceed total_len ({}) before advance",
+            self.consumed,
+            self.total_len
+        );
         assert!(
             cnt <= self.remaining(),
             "advance({}) exceeds remaining({})",
@@ -452,9 +473,21 @@ impl Buf for SegmentedBuf {
             self.remaining()
         );
         self.consumed += cnt;
+        debug_assert!(
+            self.consumed <= self.total_len,
+            "consumed ({}) must not exceed total_len ({}) after advance",
+            self.consumed,
+            self.total_len
+        );
     }
 
     fn chunks_vectored<'a>(&'a self, dst: &mut [std::io::IoSlice<'a>]) -> usize {
+        debug_assert!(
+            self.consumed <= self.total_len,
+            "consumed ({}) must not exceed total_len ({})",
+            self.consumed,
+            self.total_len
+        );
         if dst.is_empty() {
             return 0;
         }
@@ -480,6 +513,11 @@ impl Buf for SegmentedBuf {
             }
             pos += seg_len;
         }
+        debug_assert!(
+            filled <= dst.len(),
+            "filled ({filled}) must not exceed dst.len() ({})",
+            dst.len()
+        );
         filled
     }
 }
