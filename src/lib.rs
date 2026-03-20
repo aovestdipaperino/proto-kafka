@@ -118,5 +118,5 @@ pub mod messages;
 pub mod protocol;
 pub mod records;
 
-pub use error::ResponseError;
+pub use error::{ProtoError, ResponseError};
 pub use indexmap;

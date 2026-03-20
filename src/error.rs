@@ -170,7 +170,7 @@ macro_rules! define_errors {
                     }
                 }
 
-                fn try_as_str(&self) -> Result<&'static str, i16> {
+                fn try_as_str(&self) -> std::result::Result<&'static str, i16> {
                     match *self {
                         $name::Unknown(code) => Err(code),
                         $(
@@ -328,3 +328,189 @@ define_errors! { ResponseError,
     (STREAMS_TOPOLOGY_FENCED,               132, false, "The supplied topology epoch is outdated."),
     (SHARE_SESSION_LIMIT_REACHED,           133, true, "The limit of share sessions has been reached."),
 }
+
+/// Concrete error type for all proto-kafka operations.
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
+pub enum ProtoError {
+    // === Buffer errors ===
+    /// Not enough bytes remaining in buffer.
+    #[error("not enough bytes remaining in buffer")]
+    NotEnoughBytes,
+
+    // === Record batch encoding/decoding ===
+    /// Unsupported message set version (0 or 1, which are deprecated).
+    #[error("message sets v{version} are unsupported")]
+    UnsupportedMessageSetVersion {
+        /// The unsupported version.
+        version: i8,
+    },
+    /// Unknown record batch version.
+    #[error("unknown record batch version ({version})")]
+    UnknownRecordBatchVersion {
+        /// The unknown version.
+        version: i8,
+    },
+    /// Too many records to encode in a single batch.
+    #[error("too many records to encode in one batch ({count} records)")]
+    TooManyRecords {
+        /// The number of records.
+        count: usize,
+    },
+    /// Encoded record batch exceeds maximum size.
+    #[error("record batch was too large to encode ({size} bytes)")]
+    BatchTooLarge {
+        /// The size in bytes.
+        size: usize,
+    },
+    /// Encoded record exceeds maximum size.
+    #[error("record was too large to encode ({size} bytes)")]
+    RecordTooLarge {
+        /// The size in bytes.
+        size: usize,
+    },
+
+    // === Compression ===
+    /// Compression algorithm not enabled as a cargo feature.
+    #[error("support for {algorithm} is not enabled as a cargo feature")]
+    CompressionNotEnabled {
+        /// The algorithm name.
+        algorithm: &'static str,
+    },
+    /// Unknown compression algorithm identifier.
+    #[error("unknown compression algorithm: {algorithm}")]
+    UnknownCompression {
+        /// The algorithm identifier.
+        algorithm: i16,
+    },
+    /// Compression or decompression failure.
+    #[error("{operation} failed for {codec}: {source}")]
+    Compression {
+        /// Whether this was "compress" or "decompress".
+        operation: &'static str,
+        /// The codec name (e.g. "gzip", "snappy").
+        codec: &'static str,
+        /// The underlying error.
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    // === CRC / integrity ===
+    /// CRC checksum mismatch during decoding.
+    #[error("cyclic redundancy check failed (expected {expected:#010x}, got {actual:#010x})")]
+    CrcMismatch {
+        /// The expected CRC value.
+        expected: u32,
+        /// The actual CRC value.
+        actual: u32,
+    },
+    /// Magic byte / version mismatch.
+    #[error("version mismatch ({actual} != {expected})")]
+    VersionMismatch {
+        /// The expected version.
+        expected: i8,
+        /// The actual version.
+        actual: i8,
+    },
+
+    // === Field encoding/decoding ===
+    /// A length or count field was unexpectedly negative.
+    #[error("unexpected negative {field}: {value}")]
+    NegativeLength {
+        /// The field name.
+        field: &'static str,
+        /// The negative value.
+        value: i64,
+    },
+    /// A field exceeds the maximum encodable size.
+    #[error("{field} too large to encode ({size} bytes)")]
+    FieldTooLarge {
+        /// The field name.
+        field: &'static str,
+        /// The size in bytes.
+        size: usize,
+    },
+    /// Timestamps within a batch are too far apart for delta encoding.
+    #[error("timestamps within batch are too far apart ({min}, {max})")]
+    TimestampDeltaOverflow {
+        /// The minimum timestamp.
+        min: i64,
+        /// The maximum timestamp.
+        max: i64,
+    },
+    /// Offsets within a batch are too far apart for delta encoding.
+    #[error("offsets within batch are too far apart ({min}, {max})")]
+    OffsetDeltaOverflow {
+        /// The minimum offset.
+        min: i64,
+        /// The maximum offset.
+        max: i64,
+    },
+    /// String or data payload exceeds maximum encodable length.
+    #[error("{type_name} is too long to encode ({size} bytes)")]
+    TypeTooLong {
+        /// The type name.
+        type_name: &'static str,
+        /// The size in bytes.
+        size: usize,
+    },
+
+    // === UTF-8 ===
+    /// Invalid UTF-8 in a decoded string.
+    #[error("invalid UTF-8: {0}")]
+    InvalidUtf8(#[from] std::str::Utf8Error),
+    /// Invalid UTF-8 in a decoded owned string.
+    #[error("invalid UTF-8: {0}")]
+    InvalidUtf8Owned(#[from] std::string::FromUtf8Error),
+
+    // === Protocol / API ===
+    /// Unknown API key in request header.
+    #[error("unknown API key")]
+    UnknownApiKey,
+    /// Tagged field too long.
+    #[error("tagged field is too long to encode ({size} bytes)")]
+    TaggedFieldTooLong {
+        /// The size in bytes.
+        size: usize,
+    },
+
+    // === Generated code errors (emitted by protocol_codegen) ===
+    /// The specified version is not supported by this message type.
+    #[error("specified version {version} not supported by {message_type}")]
+    UnsupportedVersion {
+        /// The unsupported version.
+        version: i16,
+        /// The message type name.
+        message_type: &'static str,
+    },
+    /// A field is set that is not available on the selected protocol version.
+    #[error("field {field} is not available on version {version}")]
+    InvalidFieldForVersion {
+        /// The field name.
+        field: &'static str,
+        /// The version number.
+        version: i16,
+    },
+    /// An invalid tagged field was encountered for the given version.
+    #[error("tag {tag} is not valid for version {version}")]
+    InvalidTagForVersion {
+        /// The tag number.
+        tag: i32,
+        /// The version number.
+        version: i16,
+    },
+    /// Record segments too large to encode.
+    #[error("record segments too large to encode ({size} bytes)")]
+    RecordSegmentsTooLarge {
+        /// The size in bytes.
+        size: usize,
+    },
+}
+
+impl From<crate::protocol::buf::NotEnoughBytesError> for ProtoError {
+    fn from(_: crate::protocol::buf::NotEnoughBytesError) -> Self {
+        ProtoError::NotEnoughBytes
+    }
+}
+
+/// Result type for proto-kafka operations.
+pub type Result<T> = std::result::Result<T, ProtoError>;
