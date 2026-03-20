@@ -247,13 +247,13 @@ impl<T: ByteBufMut> ByteBufMut for &mut T {
         (**self).offset()
     }
     fn seek(&mut self, offset: usize) {
-        (**self).seek(offset)
+        (**self).seek(offset);
     }
     fn range(&mut self, r: Range<usize>) -> &mut [u8] {
         (**self).range(r)
     }
     fn put_shared_bytes(&mut self, bytes: Bytes) {
-        (**self).put_shared_bytes(bytes)
+        (**self).put_shared_bytes(bytes);
     }
 }
 
@@ -305,13 +305,17 @@ impl SegmentedBuf {
         }
         match self.segments.last_mut().unwrap() {
             Segment::Inline(b) => b,
-            _ => unreachable!(),
+            Segment::Shared(_) => unreachable!(),
         }
     }
 
     /// Write an `i32` at the given absolute byte offset within the buffer.
     ///
     /// Used to patch the length prefix after the full message has been written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the offset falls inside a `Shared` segment or is out of range.
     pub fn patch_i32(&mut self, offset: usize, value: i32) {
         let bytes = value.to_be_bytes();
         let mut pos = 0;

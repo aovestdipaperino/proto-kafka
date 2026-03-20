@@ -1,6 +1,15 @@
 //! Most types are used internally in encoding/decoding, and are not required by typical use cases
 //! for interacting with the protocol. However, types can be used for decoding partial messages,
 //! or rewriting parts of an encoded message.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::doc_markdown,
+    clippy::ignored_unit_patterns
+)]
 use std::cmp;
 use std::collections::BTreeMap;
 use std::ops::RangeBounds;

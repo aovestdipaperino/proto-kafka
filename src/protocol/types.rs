@@ -4,6 +4,18 @@
 //! types that use zigzag encoded to represent length as a "compact" representation.
 //!
 //! It is unnecessary to interact directly with these types for most use cases.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless,
+    clippy::unreadable_literal,
+    clippy::redundant_else,
+    clippy::redundant_closure,
+    clippy::redundant_closure_for_method_calls,
+    clippy::bool_to_int_with_if,
+    clippy::missing_errors_doc
+)]
 use super::{Decodable, Decoder, Encodable, Encoder, NewType, StrBytes};
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use anyhow::{bail, Result};

@@ -104,13 +104,16 @@
 //! }
 //! # }
 //! ```
+#![deny(warnings)]
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
 #![deny(missing_docs)]
 // Display required features for items when rendering for docs.rs
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 pub mod compression;
 pub mod error;
-#[allow(clippy::all)]
+#[allow(clippy::all, clippy::pedantic)]
 pub mod messages;
 pub mod protocol;
 pub mod records;

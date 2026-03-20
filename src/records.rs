@@ -38,6 +38,24 @@
 //!         }
 //!  }
 //! ```
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless,
+    clippy::missing_errors_doc,
+    clippy::doc_markdown,
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    clippy::semicolon_if_nothing_returned,
+    clippy::unnecessary_wraps,
+    clippy::struct_field_names,
+    clippy::redundant_else,
+    clippy::if_not_else,
+    clippy::range_plus_one,
+    clippy::inconsistent_struct_constructor
+)]
+
 use anyhow::{anyhow, bail, Result};
 use bytes::{Bytes, BytesMut};
 use crc::{Crc, CRC_32_ISO_HDLC};
@@ -245,9 +263,8 @@ impl RecordBatchEncoder {
         let mut record_peeker = records.clone();
 
         // Get first record
-        let first_record = match record_peeker.next() {
-            Some(record) => record,
-            None => return Ok(false),
+        let Some(first_record) = record_peeker.next() else {
+            return Ok(false);
         };
 
         // Determine how many additional records can be included in the batch
@@ -264,31 +281,21 @@ impl RecordBatchEncoder {
             .count()
             + 1;
 
-        // Aggregate various record properties
-        let min_offset = records
+        // Aggregate various record properties in a single pass
+        let (min_offset, max_offset, min_timestamp, max_timestamp) = records
             .clone()
             .take(num_records)
-            .map(|r| r.offset)
-            .min()
-            .expect("Batch contains at least one element");
-        let max_offset = records
-            .clone()
-            .take(num_records)
-            .map(|r| r.offset)
-            .max()
-            .expect("Batch contains at least one element");
-        let min_timestamp = records
-            .clone()
-            .take(num_records)
-            .map(|r| r.timestamp)
-            .min()
-            .expect("Batch contains at least one element");
-        let max_timestamp = records
-            .clone()
-            .take(num_records)
-            .map(|r| r.timestamp)
-            .max()
-            .expect("Batch contains at least one element");
+            .fold(
+                (i64::MAX, i64::MIN, i64::MAX, i64::MIN),
+                |(min_off, max_off, min_ts, max_ts), r| {
+                    (
+                        min_off.min(r.offset),
+                        max_off.max(r.offset),
+                        min_ts.min(r.timestamp),
+                        max_ts.max(r.timestamp),
+                    )
+                },
+            );
         let base_sequence = first_record
             .sequence
             .wrapping_sub((first_record.offset - min_offset) as i32);
@@ -704,7 +711,7 @@ impl RecordBatchDecoder {
                         "Support for {c:?} is not enabled as a cargo feature"
                     ))
                 }
-            };
+            }
         }
 
         Ok(compression)
@@ -744,7 +751,7 @@ impl Record {
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
             bail!(
-                "Timestamps within batch are too far apart ({}, {})",
+                "Offsets within batch are too far apart ({}, {})",
                 min_offset,
                 self.offset
             );
@@ -834,7 +841,7 @@ impl Record {
         let offset_delta = self.offset - min_offset;
         if offset_delta > i32::MAX as i64 || offset_delta < i32::MIN as i64 {
             bail!(
-                "Timestamps within batch are too far apart ({}, {})",
+                "Offsets within batch are too far apart ({}, {})",
                 min_offset,
                 self.offset
             );

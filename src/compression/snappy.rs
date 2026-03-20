@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use bytes::{Buf as _, BufMut as _, Bytes, BytesMut};
-use snap::raw::*;
+use snap::raw::{decompress_len, Decoder, Encoder, max_compress_len};
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
 
 use super::{Compressor, Decompressor};
 
 /// Kafka variant of the snappy compression algorithm. See
-/// https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes for notes about
+/// <https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes> for notes about
 /// the difference from standard snappy.
 /// See [Kafka's broker configuration](https://kafka.apache.org/documentation/#brokerconfigs_compression.type)
 /// for more information about compression.
@@ -49,6 +49,7 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
             compressed.seek(block_offset + bytes_written);
 
             let mut num_written_buf = compressed.gap_buf(length_gap);
+            #[allow(clippy::cast_possible_truncation)]
             num_written_buf.put_u32(bytes_written as u32);
         }
         Ok(res)

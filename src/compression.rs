@@ -31,6 +31,10 @@ pub trait Compressor<B: ByteBufMut> {
     /// Target buffer type for compression.
     type BufMut: ByteBufMut;
     /// Compresses into provided [`ByteBufMut`], with records encoded by `F` into `R`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if compression or the inner encoding function fails.
     fn compress<R, F>(buf: &mut B, f: F) -> Result<R>
     where
         F: FnOnce(&mut Self::BufMut) -> Result<R>;
@@ -41,6 +45,10 @@ pub trait Decompressor<B: ByteBuf> {
     /// Target buffer type for decompression.
     type Buf: ByteBuf;
     /// Decompress records from `B` mapped using `F` into `R`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if decompression or the inner decoding function fails.
     fn decompress<R, F>(buf: &mut B, f: F) -> Result<R>
     where
         F: FnOnce(&mut Self::Buf) -> Result<R>;
