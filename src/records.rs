@@ -240,7 +240,14 @@ impl RecordBatchEncoder {
             options.version
         );
         debug_assert!(
-            matches!(options.compression, Compression::None | Compression::Gzip | Compression::Snappy | Compression::Lz4 | Compression::Zstd),
+            matches!(
+                options.compression,
+                Compression::None
+                    | Compression::Gzip
+                    | Compression::Snappy
+                    | Compression::Lz4
+                    | Compression::Zstd
+            ),
             "compression must be a known variant"
         );
         let records = records.into_iter();
@@ -379,10 +386,7 @@ impl RecordBatchEncoder {
         }
         types::Int32.encode(buf, bounds.num_records as i32)?;
 
-        debug_assert!(
-            buf.offset() > header_start,
-            "header must write some bytes"
-        );
+        debug_assert!(buf.offset() > header_start, "header must write some bytes");
         Ok((size_gap, crc_gap, batch_start, content_start))
     }
 
@@ -638,7 +642,10 @@ impl RecordBatchDecoder {
     }
 
     fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
-        debug_assert!(version == 2, "only v2 batch decoding is supported, got v{version}");
+        debug_assert!(
+            version == 2,
+            "only v2 batch decoding is supported, got v{version}"
+        );
         // Base offset
         let min_offset = types::Int64.decode(buf)?;
 
@@ -769,7 +776,10 @@ impl RecordBatchDecoder {
     where
         F: Fn(&mut bytes::Bytes, Compression) -> Result<B>,
     {
-        debug_assert!(version == 2, "only v2 batch decoding is supported, got v{version}");
+        debug_assert!(
+            version == 2,
+            "only v2 batch decoding is supported, got v{version}"
+        );
         let records_before = records.len();
         let (batch_decode_info, mut buf) = Self::decode_batch_info(buf, version)?;
         let compression = batch_decode_info.compression;
@@ -882,7 +892,10 @@ fn decode_optional_bytes<B: ByteBuf>(
     field_name: &'static str,
 ) -> Result<Option<Bytes>> {
     debug_assert!(!field_name.is_empty(), "field_name must not be empty");
-    debug_assert!(buf.has_remaining(), "buffer must have remaining bytes for field '{field_name}'");
+    debug_assert!(
+        buf.has_remaining(),
+        "buffer must have remaining bytes for field '{field_name}'"
+    );
     let len: i32 = types::VarInt.decode(buf)?;
     match len.cmp(&-1) {
         Ordering::Less => Err(ProtoError::NegativeLength {
@@ -896,7 +909,10 @@ fn decode_optional_bytes<B: ByteBuf>(
 
 /// Decode the headers map from a buffer.
 fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<Bytes>>> {
-    debug_assert!(buf.has_remaining(), "buffer must have remaining bytes to decode headers");
+    debug_assert!(
+        buf.has_remaining(),
+        "buffer must have remaining bytes to decode headers"
+    );
     let num_headers: i32 = types::VarInt.decode(buf)?;
     if num_headers < 0 {
         return Err(ProtoError::NegativeLength {
@@ -1125,8 +1141,8 @@ mod tests {
             timestamp_type: TimestampType::Creation,
             offset: Default::default(),
             timestamp: Default::default(),
-            key: Default::default(),
-            value: Default::default(),
+            key: Option::default(),
+            value: Option::default(),
             headers: [
                 ("some-key".into(), Some("some-value".into())),
                 ("other-header".into(), None),
@@ -1157,8 +1173,8 @@ mod tests {
             timestamp_type: TimestampType::Creation,
             offset: Default::default(),
             timestamp: Default::default(),
-            key: Default::default(),
-            value: Default::default(),
+            key: Option::default(),
+            value: Option::default(),
             headers: [("other-header".into(), None)].into(),
         };
         let mut buf = &mut bytes::BytesMut::new();
@@ -1358,7 +1374,7 @@ mod tests {
             current: 0,
         };
 
-        let only_successful: Vec<Record> = iterator2.filter_map(|result| result.ok()).collect();
+        let only_successful: Vec<Record> = iterator2.filter_map(Result::ok).collect();
 
         assert_eq!(only_successful.len(), 0); // No successful records with invalid data
     }

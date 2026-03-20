@@ -26,8 +26,16 @@ impl<B: ByteBufMut> Compressor<B> for Gzip {
 
         // Compress directly into the target buffer
         let mut e = GzEncoder::new(buf.writer(), Compression::default());
-        e.write_all(&tmp).map_err(|e| ProtoError::Compression { operation: "compress", codec: "gzip", source: Box::new(e) })?;
-        e.finish().map_err(|e| ProtoError::Compression { operation: "compress", codec: "gzip", source: Box::new(e) })?;
+        e.write_all(&tmp).map_err(|e| ProtoError::Compression {
+            operation: "compress",
+            codec: "gzip",
+            source: Box::new(e),
+        })?;
+        e.finish().map_err(|e| ProtoError::Compression {
+            operation: "compress",
+            codec: "gzip",
+            source: Box::new(e),
+        })?;
 
         Ok(res)
     }
@@ -44,8 +52,16 @@ impl<B: ByteBuf> Decompressor<B> for Gzip {
         // Decompress directly from the input buffer
         let mut d = GzDecoder::new((&mut tmp).writer());
         d.write_all(&buf.copy_to_bytes(buf.remaining()))
-            .map_err(|e| ProtoError::Compression { operation: "decompress", codec: "gzip", source: Box::new(e) })?;
-        d.finish().map_err(|e| ProtoError::Compression { operation: "decompress", codec: "gzip", source: Box::new(e) })?;
+            .map_err(|e| ProtoError::Compression {
+                operation: "decompress",
+                codec: "gzip",
+                source: Box::new(e),
+            })?;
+        d.finish().map_err(|e| ProtoError::Compression {
+            operation: "decompress",
+            codec: "gzip",
+            source: Box::new(e),
+        })?;
 
         f(&mut tmp.into())
     }

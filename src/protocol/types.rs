@@ -381,12 +381,10 @@ impl Decoder<Option<StdString>> for String {
                 buf.try_copy_to_slice(&mut strbuf)?;
                 Ok(Some(std::string::String::from_utf8(strbuf)?))
             }
-            n => {
-                Err(ProtoError::NegativeLength {
-                    field: "string length",
-                    value: n as i64,
-                })
-            }
+            n => Err(ProtoError::NegativeLength {
+                field: "string length",
+                value: n as i64,
+            }),
         }
     }
 }
@@ -399,12 +397,10 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
                 let strbuf = StrBytes::try_from(buf.try_get_bytes(n as usize)?)?;
                 Ok(Some(strbuf.into()))
             }
-            n => {
-                Err(ProtoError::NegativeLength {
-                    field: "string length",
-                    value: n as i64,
-                })
-            }
+            n => Err(ProtoError::NegativeLength {
+                field: "string length",
+                value: n as i64,
+            }),
         }
     }
 }
@@ -412,12 +408,10 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
 impl Decoder<StdString> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<StdString> {
         match String.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "string length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "string length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -427,12 +421,10 @@ impl Decoder<StdString> for String {
 impl<T: NewType<StrBytes>> Decoder<T> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         match String.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "string length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "string length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -570,12 +562,10 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for CompactString {
 impl Decoder<StdString> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<StdString> {
         match CompactString.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "compact string length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "compact string length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -585,12 +575,10 @@ impl Decoder<StdString> for CompactString {
 impl<T: NewType<StrBytes>> Decoder<T> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         match CompactString.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "compact string length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "compact string length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -720,12 +708,10 @@ impl Decoder<Option<Vec<u8>>> for Bytes {
                 buf.try_copy_to_slice(&mut data)?;
                 Ok(Some(data))
             }
-            n => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: n as i64,
-                })
-            }
+            n => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: n as i64,
+            }),
         }
     }
 }
@@ -735,12 +721,10 @@ impl Decoder<Option<bytes::Bytes>> for Bytes {
         match Int32.decode(buf)? {
             -1 => Ok(None),
             n if n >= 0 => Ok(Some(buf.try_get_bytes(n as usize)?)),
-            n => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: n as i64,
-                })
-            }
+            n => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: n as i64,
+            }),
         }
     }
 }
@@ -748,12 +732,10 @@ impl Decoder<Option<bytes::Bytes>> for Bytes {
 impl Decoder<Vec<u8>> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<u8>> {
         match Bytes.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -763,12 +745,10 @@ impl Decoder<Vec<u8>> for Bytes {
 impl Decoder<bytes::Bytes> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<bytes::Bytes> {
         match Bytes.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -916,12 +896,10 @@ impl Decoder<Option<bytes::Bytes>> for CompactBytes {
 impl Decoder<Vec<u8>> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<u8>> {
         match CompactBytes.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -931,12 +909,10 @@ impl Decoder<Vec<u8>> for CompactBytes {
 impl Decoder<bytes::Bytes> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<bytes::Bytes> {
         match CompactBytes.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "data length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "data length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -1095,12 +1071,10 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
                 }
                 Ok(Some(result))
             }
-            n => {
-                Err(ProtoError::NegativeLength {
-                    field: "array length",
-                    value: n as i64,
-                })
-            }
+            n => Err(ProtoError::NegativeLength {
+                field: "array length",
+                value: n as i64,
+            }),
         }
     }
 }
@@ -1108,12 +1082,10 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
 impl<T, E: Decoder<T>> Decoder<Vec<T>> for Array<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<T>> {
         match self.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "array length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "array length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -1222,12 +1194,10 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for CompactArray<E> {
 impl<T, E: Decoder<T>> Decoder<Vec<T>> for CompactArray<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Vec<T>> {
         match self.decode(buf) {
-            Ok(None) => {
-                Err(ProtoError::NegativeLength {
-                    field: "compact array length",
-                    value: -1,
-                })
-            }
+            Ok(None) => Err(ProtoError::NegativeLength {
+                field: "compact array length",
+                value: -1,
+            }),
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
         }
@@ -1241,44 +1211,44 @@ mod tests {
     use std::fmt::Debug;
 
     fn test_encoder_decoder<V: PartialEq + Debug, E: for<'a> Encoder<&'a V> + Decoder<V>>(
-        encoder: E,
-        value: V,
+        encoder: &E,
+        value: &V,
         mut expected: &[u8],
     ) {
         let mut buf = vec![];
-        encoder.encode(&mut buf, &value).unwrap();
+        encoder.encode(&mut buf, value).unwrap();
         assert_eq!(buf, expected);
 
         let decoded = encoder.decode(&mut expected).unwrap();
-        assert_eq!(value, decoded);
+        assert_eq!(*value, decoded);
     }
 
     #[test]
     fn smoke_varint_encoder_decoder() {
-        test_encoder_decoder(VarInt, 0, &[0]);
-        test_encoder_decoder(VarInt, -1, &[1]);
-        test_encoder_decoder(VarInt, 1, &[2]);
-        test_encoder_decoder(VarInt, -2, &[3]);
-        test_encoder_decoder(VarInt, 300, &[216, 4]);
-        test_encoder_decoder(VarInt, i32::MAX, &[254, 255, 255, 255, 15]);
-        test_encoder_decoder(VarInt, i32::MIN, &[255, 255, 255, 255, 15]);
+        test_encoder_decoder(&VarInt, &0, &[0]);
+        test_encoder_decoder(&VarInt, &-1, &[1]);
+        test_encoder_decoder(&VarInt, &1, &[2]);
+        test_encoder_decoder(&VarInt, &-2, &[3]);
+        test_encoder_decoder(&VarInt, &300, &[216, 4]);
+        test_encoder_decoder(&VarInt, &i32::MAX, &[254, 255, 255, 255, 15]);
+        test_encoder_decoder(&VarInt, &i32::MIN, &[255, 255, 255, 255, 15]);
     }
 
     #[test]
     fn smoke_varlong_encoder_decoder() {
-        test_encoder_decoder(VarLong, 0, &[0]);
-        test_encoder_decoder(VarLong, -1, &[1]);
-        test_encoder_decoder(VarLong, 1, &[2]);
-        test_encoder_decoder(VarLong, -2, &[3]);
-        test_encoder_decoder(VarLong, 300, &[216, 4]);
+        test_encoder_decoder(&VarLong, &0, &[0]);
+        test_encoder_decoder(&VarLong, &-1, &[1]);
+        test_encoder_decoder(&VarLong, &1, &[2]);
+        test_encoder_decoder(&VarLong, &-2, &[3]);
+        test_encoder_decoder(&VarLong, &300, &[216, 4]);
         test_encoder_decoder(
-            VarLong,
-            i64::MAX,
+            &VarLong,
+            &i64::MAX,
             &[254, 255, 255, 255, 255, 255, 255, 255, 255, 1],
         );
         test_encoder_decoder(
-            VarLong,
-            i64::MIN,
+            &VarLong,
+            &i64::MIN,
             &[255, 255, 255, 255, 255, 255, 255, 255, 255, 1],
         );
     }
@@ -1286,32 +1256,32 @@ mod tests {
     #[test]
     fn smoke_string_encoder_decoder() {
         test_encoder_decoder(
-            String,
-            std::string::String::from("hello"),
+            &String,
+            &std::string::String::from("hello"),
             &[0, 5, 104, 101, 108, 108, 111],
         );
-        test_encoder_decoder(String, None::<std::string::String>, &[255, 255]);
+        test_encoder_decoder(&String, &None::<std::string::String>, &[255, 255]);
     }
 
     #[test]
     fn smoke_compact_string_encoder_decoder() {
         test_encoder_decoder(
-            CompactString,
-            std::string::String::from("hello"),
+            &CompactString,
+            &std::string::String::from("hello"),
             &[6, 104, 101, 108, 108, 111],
         );
-        test_encoder_decoder(CompactString, None::<std::string::String>, &[0]);
+        test_encoder_decoder(&CompactString, &None::<std::string::String>, &[0]);
     }
 
     #[test]
     fn smoke_bytes_encoder_decoder() {
-        test_encoder_decoder(Bytes, vec![1, 2, 3, 4], &[0, 0, 0, 4, 1, 2, 3, 4]);
-        test_encoder_decoder(Bytes, None::<Vec<u8>>, &[255, 255, 255, 255]);
+        test_encoder_decoder(&Bytes, &vec![1, 2, 3, 4], &[0, 0, 0, 4, 1, 2, 3, 4]);
+        test_encoder_decoder(&Bytes, &None::<Vec<u8>>, &[255, 255, 255, 255]);
     }
 
     #[test]
     fn smoke_compact_bytes_encoder_decoder() {
-        test_encoder_decoder(CompactBytes, vec![1, 2, 3, 4], &[5, 1, 2, 3, 4]);
-        test_encoder_decoder(CompactBytes, None::<Vec<u8>>, &[0]);
+        test_encoder_decoder(&CompactBytes, &vec![1, 2, 3, 4], &[5, 1, 2, 3, 4]);
+        test_encoder_decoder(&CompactBytes, &None::<Vec<u8>>, &[0]);
     }
 }

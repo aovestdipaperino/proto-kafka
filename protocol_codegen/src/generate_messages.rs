@@ -43,6 +43,8 @@ pub fn run(messages_module_dir: &str, mut input_file_paths: Vec<PathBuf>) -> Res
     writeln!(m, "#[cfg(feature = \"messages_enums\")]")?;
     writeln!(m, "#[cfg(any(feature = \"client\", feature = \"broker\"))]")?;
     writeln!(m, "use crate::protocol::Decodable;")?;
+    writeln!(m, "#[cfg(feature = \"messages_enums\")]")?;
+    writeln!(m, "#[cfg(any(feature = \"client\", feature = \"broker\"))]")?;
     writeln!(m, "use crate::error::Result;")?;
     writeln!(m)?;
 

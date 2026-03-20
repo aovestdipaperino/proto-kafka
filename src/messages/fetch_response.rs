@@ -1330,11 +1330,6 @@ pub struct PartitionData {
     /// Supported API versions: 4-18
     pub records: Option<Bytes>,
 
-    /// Record data segments for zero-copy multi-batch encoding.
-    /// When non-empty, these are used instead of `records`.
-    #[doc(hidden)]
-    pub record_segments: Vec<Bytes>,
-
     /// Other tagged fields
     pub unknown_tagged_fields: BTreeMap<i32, Bytes>,
 }
@@ -1439,11 +1434,6 @@ impl PartitionData {
         self.records = value;
         self
     }
-    /// Sets `record_segments` for zero-copy multi-batch encoding.
-    pub fn with_record_segments(mut self, value: Vec<Bytes>) -> Self {
-        self.record_segments = value;
-        self
-    }
     /// Sets unknown_tagged_fields to the passed value.
     pub fn with_unknown_tagged_fields(mut self, value: BTreeMap<i32, Bytes>) -> Self {
         self.unknown_tagged_fields = value;
@@ -1453,34 +1443,6 @@ impl PartitionData {
     pub fn with_unknown_tagged_field(mut self, key: i32, value: Bytes) -> Self {
         self.unknown_tagged_fields.insert(key, value);
         self
-    }
-
-    /// Constructs a partition response with only the fields needed for fetch.
-    /// Avoids the allocations in `Default` (BTreeMap, Vec, Bytes).
-    #[inline]
-    pub fn for_fetch(
-        partition_index: i32,
-        high_watermark: i64,
-        records: Option<Bytes>,
-        record_segments: Vec<Bytes>,
-        error_code: i16,
-        log_start_offset: i64,
-    ) -> Self {
-        Self {
-            partition_index,
-            error_code,
-            high_watermark,
-            last_stable_offset: high_watermark,
-            log_start_offset,
-            diverging_epoch: Default::default(),
-            current_leader: Default::default(),
-            snapshot_id: Default::default(),
-            aborted_transactions: None,
-            preferred_read_replica: (-1).into(),
-            records,
-            record_segments,
-            unknown_tagged_fields: BTreeMap::new(),
-        }
     }
 }
 
@@ -1516,21 +1478,7 @@ impl Encodable for PartitionData {
                 });
             }
         }
-        if !self.record_segments.is_empty() {
-            // Multi-batch zero-copy: write total length prefix, then each segment
-            let total_len: usize = self.record_segments.iter().map(|s| s.len()).sum();
-            if version >= 12 {
-                types::UnsignedVarInt.encode(buf, (total_len as u32) + 1)?;
-            } else {
-                if total_len > i32::MAX as usize {
-                    return Err(ProtoError::RecordSegmentsTooLarge { size: total_len });
-                }
-                types::Int32.encode(buf, total_len as i32)?;
-            }
-            for segment in &self.record_segments {
-                buf.put_shared_bytes(segment.clone());
-            }
-        } else if version >= 12 {
+        if version >= 12 {
             types::CompactBytes.encode(buf, &self.records)?;
         } else {
             types::Bytes.encode(buf, &self.records)?;
@@ -1621,15 +1569,7 @@ impl Encodable for PartitionData {
                 });
             }
         }
-        if !self.record_segments.is_empty() {
-            let total_len: usize = self.record_segments.iter().map(|s| s.len()).sum();
-            if version >= 12 {
-                total_size += types::UnsignedVarInt.compute_size((total_len as u32) + 1)?;
-            } else {
-                total_size += 4;
-            }
-            total_size += total_len;
-        } else if version >= 12 {
+        if version >= 12 {
             total_size += types::CompactBytes.compute_size(&self.records)?;
         } else {
             total_size += types::Bytes.compute_size(&self.records)?;
@@ -1767,7 +1707,6 @@ impl Decodable for PartitionData {
             aborted_transactions,
             preferred_read_replica,
             records,
-            record_segments: Vec::new(),
             unknown_tagged_fields,
         })
     }
@@ -1787,7 +1726,6 @@ impl Default for PartitionData {
             aborted_transactions: Some(Default::default()),
             preferred_read_replica: (-1).into(),
             records: Some(Default::default()),
-            record_segments: Vec::new(),
             unknown_tagged_fields: BTreeMap::new(),
         }
     }

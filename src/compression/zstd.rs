@@ -1,5 +1,5 @@
-use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use crate::error::{ProtoError, Result};
+use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use super::{Compressor, Decompressor};
@@ -21,8 +21,13 @@ impl<B: ByteBufMut> Compressor<B> for Zstd {
         let res = f(&mut tmp)?;
 
         // Compress directly into the target buffer
-        zstd::stream::copy_encode(tmp.reader(), buf.writer(), COMPRESSION_LEVEL)
-            .map_err(|e| ProtoError::Compression { operation: "compress", codec: "zstd", source: Box::new(e) })?;
+        zstd::stream::copy_encode(tmp.reader(), buf.writer(), COMPRESSION_LEVEL).map_err(|e| {
+            ProtoError::Compression {
+                operation: "compress",
+                codec: "zstd",
+                source: Box::new(e),
+            }
+        })?;
         Ok(res)
     }
 }
@@ -37,7 +42,11 @@ impl<B: ByteBuf> Decompressor<B> for Zstd {
         let mut tmp = BytesMut::new().writer();
         // Allocate a temporary buffer to hold the uncompressed bytes
         let buf = buf.copy_to_bytes(buf.remaining());
-        zstd::stream::copy_decode(buf.reader(), &mut tmp).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "zstd", source: Box::new(e) })?;
+        zstd::stream::copy_decode(buf.reader(), &mut tmp).map_err(|e| ProtoError::Compression {
+            operation: "decompress",
+            codec: "zstd",
+            source: Box::new(e),
+        })?;
 
         f(&mut tmp.into_inner().into())
     }

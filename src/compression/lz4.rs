@@ -1,5 +1,5 @@
-use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use crate::error::{ProtoError, Result};
+use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use lz4::BlockMode;
 use lz4::{Decoder, EncoderBuilder};
@@ -27,10 +27,22 @@ impl<B: ByteBufMut> Compressor<B> for Lz4 {
             .level(COMPRESSION_LEVEL)
             .block_mode(BlockMode::Independent)
             .build(buf.writer())
-            .map_err(|e| ProtoError::Compression { operation: "compress", codec: "lz4", source: Box::new(e) })?;
+            .map_err(|e| ProtoError::Compression {
+                operation: "compress",
+                codec: "lz4",
+                source: Box::new(e),
+            })?;
 
-        io::copy(&mut tmp.reader(), &mut encoder).map_err(|e| ProtoError::Compression { operation: "compress", codec: "lz4", source: Box::new(e) })?;
-        encoder.finish().1.map_err(|e| ProtoError::Compression { operation: "compress", codec: "lz4", source: Box::new(e) })?;
+        io::copy(&mut tmp.reader(), &mut encoder).map_err(|e| ProtoError::Compression {
+            operation: "compress",
+            codec: "lz4",
+            source: Box::new(e),
+        })?;
+        encoder.finish().1.map_err(|e| ProtoError::Compression {
+            operation: "compress",
+            codec: "lz4",
+            source: Box::new(e),
+        })?;
 
         Ok(res)
     }
@@ -47,8 +59,16 @@ impl<B: ByteBuf> Decompressor<B> for Lz4 {
         // Allocate a temporary buffer to hold the uncompressed bytes
         let buf = buf.copy_to_bytes(buf.remaining());
 
-        let mut decoder = Decoder::new(buf.reader()).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "lz4", source: Box::new(e) })?;
-        io::copy(&mut decoder, &mut tmp).map_err(|e| ProtoError::Compression { operation: "decompress", codec: "lz4", source: Box::new(e) })?;
+        let mut decoder = Decoder::new(buf.reader()).map_err(|e| ProtoError::Compression {
+            operation: "decompress",
+            codec: "lz4",
+            source: Box::new(e),
+        })?;
+        io::copy(&mut decoder, &mut tmp).map_err(|e| ProtoError::Compression {
+            operation: "decompress",
+            codec: "lz4",
+            source: Box::new(e),
+        })?;
 
         f(&mut tmp.into_inner().into())
     }

@@ -3,6 +3,8 @@
 //! These messages are generated programmatically. See the [Kafka's protocol documentation](https://kafka.apache.org/protocol.html) for more information about a given message type.
 // WARNING: the items of this module are generated and should not be edited directly.
 
+#[cfg(feature = "messages_enums")]
+#[cfg(any(feature = "client", feature = "broker"))]
 use crate::error::Result;
 #[cfg(feature = "messages_enums")]
 #[cfg(any(feature = "client", feature = "broker"))]
