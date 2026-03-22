@@ -56,6 +56,8 @@
     clippy::inconsistent_struct_constructor
 )]
 
+pub mod raw;
+
 use crate::error::{ProtoError, Result};
 use bytes::{Bytes, BytesMut};
 use crc::{Crc, CRC_32_ISO_HDLC};
