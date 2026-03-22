@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "proto-kafka"
-version = "0.18.2"
+version = "0.18.1"
 dependencies = [
  "bytes",
  "crc",

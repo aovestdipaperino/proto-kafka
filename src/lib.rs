@@ -115,8 +115,6 @@ pub mod compression;
 pub mod error;
 #[allow(clippy::all, clippy::pedantic)]
 pub mod messages;
-#[cfg(feature = "producer_state")]
-pub mod producer_state;
 pub mod protocol;
 pub mod records;
 
