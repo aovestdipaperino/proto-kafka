@@ -3,7 +3,7 @@ members = ["protocol_codegen"]
 
 [package]
 name = "proto-kafka"
-version = "0.18.1"
+version = "0.18.2"
 authors = [
     "Diggory Blake <diggsey@googlemail.com>",
     "Charlotte McElwain <charlotte.c.mcelwain@gmail.com>",
@@ -29,6 +29,9 @@ client = []
 # Enable this feature if you are implementing a kafka protocol compatible broker.
 # It will enable encoding of responses and decoding of requests.
 broker = []
+
+# Enable per-partition producer idempotency state tracking with LRU eviction
+producer_state = []
 
 # Enable compression of records using gzip
 gzip = ["dep:flate2"]
