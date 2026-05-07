@@ -323,3 +323,78 @@ impl<T: ByteBufMut> ByteBufMut for &mut T {
         (**self).range(r)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_peek_and_get() {
+        let mut buf = Bytes::from(vec![1, 2, 3, 4, 5]);
+        let peeked = buf.peek_bytes(1..3);
+        assert_eq!(&peeked[..], &[2, 3]);
+        assert_eq!(buf.remaining(), 5, "peek should not consume");
+
+        let got = buf.get_bytes(2);
+        assert_eq!(&got[..], &[1, 2]);
+        assert_eq!(buf.remaining(), 3, "get_bytes should consume");
+    }
+
+    #[test]
+    fn try_get_bytes_insufficient() {
+        let mut buf = Bytes::from(vec![1, 2]);
+        let result = buf.try_get_bytes(10);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn try_peek_bytes_insufficient() {
+        let mut buf = Bytes::from(vec![1, 2]);
+        let result = buf.try_peek_bytes(0..10);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bytesmut_peek_and_get() {
+        let mut buf = BytesMut::from(&[10, 20, 30][..]);
+        let peeked = buf.peek_bytes(0..2);
+        assert_eq!(&peeked[..], &[10, 20]);
+
+        let got = buf.get_bytes(1);
+        assert_eq!(&got[..], &[10]);
+        assert_eq!(buf.remaining(), 2);
+    }
+
+    #[test]
+    fn bytebufmut_gap_roundtrip() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(0xAA);
+        let typed_gap = buf.put_typed_gap(gap::I32);
+        buf.put_u8(0xBB);
+
+        buf.fill_typed_gap(typed_gap, 0x12345678_i32);
+
+        assert_eq!(buf[0], 0xAA);
+        assert_eq!(&buf[1..5], &0x12345678_i32.to_be_bytes());
+        assert_eq!(buf[5], 0xBB);
+    }
+
+    #[test]
+    fn bytebufmut_offset_and_seek() {
+        let mut buf = BytesMut::new();
+        assert_eq!(buf.offset(), 0);
+        buf.put_u8(1);
+        buf.put_u8(2);
+        assert_eq!(buf.offset(), 2);
+        buf.seek(5);
+        assert_eq!(buf.offset(), 5);
+        assert_eq!(buf.len(), 5);
+    }
+
+    #[test]
+    fn not_enough_bytes_error_display() {
+        let err = NotEnoughBytesError;
+        let msg = format!("{err}");
+        assert!(msg.contains("Not enough bytes"));
+    }
+}
