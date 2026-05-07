@@ -459,7 +459,6 @@ impl RecordBatchEncoder {
 impl RecordBatchDecoder {
     /// Decode the provided buffer into a vec of records.
     pub fn decode<B: ByteBuf>(buf: &mut B) -> Result<Vec<Record>, DecodeError> {
-        debug_assert!(buf.has_remaining(), "buffer must not be empty");
         let mut records = Vec::new();
         while buf.has_remaining() {
             Self::decode_batch(buf, &mut records)?;

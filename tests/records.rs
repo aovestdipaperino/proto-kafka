@@ -430,3 +430,245 @@ fn encode_legacy_transactional_returns_error() {
     let result = RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options);
     assert!(result.is_err());
 }
+
+// ============================================================
+// Kafka Protocol Nuance Tests (from KAFKA-PROTOCOL-NUANCES.md)
+// ============================================================
+
+/// Nuance Summary #1: `None` vs empty bytes are distinct on the wire.
+/// `None` key/value encodes as VarInt(-1), empty `Bytes` encodes as VarInt(0).
+/// These must survive roundtrip as distinct values.
+#[test]
+fn none_vs_empty_bytes_are_distinct() {
+    let none_record = Record {
+        transactional: false,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 0,
+        sequence: NO_SEQUENCE,
+        timestamp: 1000,
+        key: None,
+        value: None,
+        headers: IndexMap::new(),
+    };
+    let empty_record = Record {
+        transactional: false,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 1,
+        sequence: NO_SEQUENCE,
+        timestamp: 1001,
+        key: Some(Bytes::new()),
+        value: Some(Bytes::new()),
+        headers: IndexMap::new(),
+    };
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(
+        &mut buf,
+        [&none_record, &empty_record].iter().copied(),
+        &options,
+    )
+    .unwrap();
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert_eq!(decoded.len(), 2);
+
+    // Record at offset 0: None key/value must decode as None
+    assert!(decoded[0].key.is_none(), "None key must roundtrip as None, not empty");
+    assert!(decoded[0].value.is_none(), "None value must roundtrip as None, not empty");
+
+    // Record at offset 1: empty key/value must decode as Some(empty), not None
+    assert_eq!(
+        decoded[1].key.as_ref().map(|b| b.len()),
+        Some(0),
+        "empty key must roundtrip as Some(empty), not None"
+    );
+    assert_eq!(
+        decoded[1].value.as_ref().map(|b| b.len()),
+        Some(0),
+        "empty value must roundtrip as Some(empty), not None"
+    );
+}
+
+/// Nuance 5c: Kafka clients always send V2 batches with baseOffset=0.
+/// The encoder must handle offset 0 correctly (no off-by-one, no special-casing).
+#[test]
+fn v2_base_offset_zero_roundtrip() {
+    let records: Vec<Record> = (0..3)
+        .map(|i| make_record(i, &format!("k{i}"), &format!("v{i}")))
+        .collect();
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, records.iter(), &options).unwrap();
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert_eq!(decoded.len(), 3);
+    assert_eq!(decoded[0].offset, 0);
+    assert_eq!(decoded[1].offset, 1);
+    assert_eq!(decoded[2].offset, 2);
+}
+
+/// Nuance 6a: Multiple records must be packed into a single batch,
+/// not one batch per record. Verify by encoding N records and checking
+/// the encoded output decodes to exactly N records in sequence.
+#[test]
+fn multiple_records_single_batch() {
+    let records: Vec<Record> = (0..10)
+        .map(|i| make_record(i, &format!("k{i}"), &format!("v{i}")))
+        .collect();
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, records.iter(), &options).unwrap();
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert_eq!(decoded.len(), 10);
+
+    // All records should have sequential offsets
+    for (i, rec) in decoded.iter().enumerate() {
+        assert_eq!(rec.offset, i as i64);
+    }
+}
+
+/// Nuance 6a extended: Records with different batch properties (e.g. transactional
+/// vs non-transactional) MUST be split into separate batches.
+#[test]
+fn different_properties_produce_separate_batches() {
+    let rec_a = Record {
+        transactional: false,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 0,
+        sequence: NO_SEQUENCE,
+        timestamp: 1000,
+        key: Some(Bytes::from("a")),
+        value: Some(Bytes::from("a")),
+        headers: IndexMap::new(),
+    };
+    let rec_b = Record {
+        transactional: true, // different batch property
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: 42,
+        producer_epoch: 1,
+        timestamp_type: TimestampType::Creation,
+        offset: 1,
+        sequence: 0,
+        timestamp: 1001,
+        key: Some(Bytes::from("b")),
+        value: Some(Bytes::from("b")),
+        headers: IndexMap::new(),
+    };
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(
+        &mut buf,
+        [&rec_a, &rec_b].iter().copied(),
+        &options,
+    )
+    .unwrap();
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert_eq!(decoded.len(), 2);
+    assert!(!decoded[0].transactional);
+    assert!(decoded[1].transactional);
+}
+
+/// Nuance 6b: Encoding must not mutate the input records.
+#[test]
+fn encode_does_not_mutate_input() {
+    let records: Vec<Record> = (0..3)
+        .map(|i| make_record(i, &format!("k{i}"), &format!("v{i}")))
+        .collect();
+    let originals = records.clone();
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, records.iter(), &options).unwrap();
+
+    // Input records must be unchanged after encoding
+    assert_eq!(records, originals, "encode must not mutate input records");
+}
+
+/// Edge case: Encoding an empty iterator produces zero bytes,
+/// and decoding zero bytes produces an empty Vec.
+#[test]
+fn empty_iterator_roundtrip() {
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    let empty: Vec<&Record> = vec![];
+    RecordBatchEncoder::encode(&mut buf, empty.into_iter(), &options).unwrap();
+    assert!(buf.is_empty(), "encoding zero records should produce zero bytes");
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert!(decoded.is_empty(), "decoding zero bytes should produce zero records");
+}
+
+/// Nuance Summary #1 applied to legacy format: None vs empty on v0/v1.
+#[test]
+fn none_vs_empty_bytes_legacy_v1() {
+    let none_record = Record {
+        transactional: false,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 0,
+        sequence: NO_SEQUENCE,
+        timestamp: 1000,
+        key: None,
+        value: Some(Bytes::from("has-value")),
+        headers: IndexMap::new(),
+    };
+    let options = RecordEncodeOptions {
+        version: 1,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, std::iter::once(&none_record), &options).unwrap();
+
+    let mut decode_buf = Bytes::from(buf);
+    let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert!(decoded[0].key.is_none(), "None key must stay None in legacy format");
+    assert_eq!(decoded[0].value.as_ref().unwrap().as_ref(), b"has-value");
+}
