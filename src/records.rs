@@ -163,7 +163,10 @@ impl RecordBatchEncoder {
         match options.version {
             0..=1 => Self::encode_legacy(buf, records, options),
             2 => Self::encode_new(buf, records, options),
-            _ => panic!("Unknown record batch version"),
+            _ => {
+                error!("Unknown record batch version ({})", options.version);
+                Err(EncodeError { kind: EncodeErrorKind::InvalidData })
+            }
         }
     }
     fn encode_legacy_records<'a, B, I>(
@@ -223,7 +226,13 @@ impl RecordBatchEncoder {
                     Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
                         Self::encode_legacy_records(buf, records, &inner_opts)
                     })?,
-                    _ => unimplemented!(),
+                    _ => {
+                        error!(
+                            "Compression algorithm '{:?}' is not implemented for legacy encoding",
+                            options.compression
+                        );
+                        return Err(EncodeError { kind: EncodeErrorKind::InvalidData });
+                    }
                 }
 
                 let value_end = buf.offset();
@@ -297,25 +306,25 @@ impl RecordBatchEncoder {
             .take(num_records)
             .map(|r| r.offset)
             .min()
-            .expect("Batch contains at least one element");
+            .ok_or(EncodeError { kind: EncodeErrorKind::InvalidData })?;
         let max_offset = records
             .clone()
             .take(num_records)
             .map(|r| r.offset)
             .max()
-            .expect("Batch contains at least one element");
+            .ok_or(EncodeError { kind: EncodeErrorKind::InvalidData })?;
         let min_timestamp = records
             .clone()
             .take(num_records)
             .map(|r| r.timestamp)
             .min()
-            .expect("Batch contains at least one element");
+            .ok_or(EncodeError { kind: EncodeErrorKind::InvalidData })?;
         let max_timestamp = records
             .clone()
             .take(num_records)
             .map(|r| r.timestamp)
             .max()
-            .expect("Batch contains at least one element");
+            .ok_or(EncodeError { kind: EncodeErrorKind::InvalidData })?;
         let base_sequence = first_record
             .sequence
             .wrapping_sub((first_record.offset - min_offset) as i32);
@@ -387,7 +396,13 @@ impl RecordBatchEncoder {
             Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
                 Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
             })?,
-            _ => unimplemented!(),
+            _ => {
+                error!(
+                    "Compression algorithm '{:?}' is not implemented for new batch encoding",
+                    options.compression
+                );
+                return Err(EncodeError { kind: EncodeErrorKind::InvalidData });
+            }
         }
 
         let batch_end = buf.offset();
@@ -569,7 +584,13 @@ impl RecordBatchDecoder {
             Compression::Gzip => cmpr::Gzip::decompress(buf, |buf| {
                 Self::decode_new_records(buf, &batch_decode_info, version, records)
             })?,
-            _ => unimplemented!(),
+            _ => {
+                error!(
+                    "Compression algorithm '{:?}' is not implemented for decoding",
+                    compression
+                );
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
+            }
         };
 
         Ok(())
