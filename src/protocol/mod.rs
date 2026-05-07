@@ -27,7 +27,6 @@ pub use buf::SegmentedBuf;
 mod str_bytes {
     use bytes::Bytes;
     use std::borrow::Borrow;
-    use std::convert::TryFrom;
     use std::fmt::{Debug, Display, Formatter};
     use std::ops::Deref;
     use std::str::Utf8Error;

@@ -43,23 +43,23 @@ fn record_batch_produce_fetch() {
     )
     .unwrap();
 
-    create_topic(topic_name.clone(), &mut socket);
+    create_topic(&topic_name, &mut socket);
 
     // Sometimes (rarely) the produce request will fail with error code 6 (NOT_LEADER_OR_FOLLOWER)
     // Hopefully a 1s sleep will prevent that
     std::thread::sleep(Duration::from_secs(1));
 
-    produce_records(topic_name.clone(), 9, encoded.freeze(), &mut socket);
+    produce_records(&topic_name, 9, encoded.freeze(), &mut socket);
     fetch_records(
-        topic_name.clone(),
+        &topic_name,
         12,
-        records,
+        &records,
         (2, Compression::None),
         &mut socket,
     );
 }
 
-fn create_topic(topic_name: TopicName, socket: &mut TcpStream) {
+fn create_topic(topic_name: &TopicName, socket: &mut TcpStream) {
     let version = 7;
     let header = RequestHeader::default()
         .with_request_api_key(ApiKey::CreateTopics as i16)
@@ -72,19 +72,19 @@ fn create_topic(topic_name: TopicName, socket: &mut TcpStream) {
             .with_name(topic_name.clone())
             .with_replication_factor(1)]);
 
-    send_request(socket, header, request);
+    send_request(socket, &header, &request);
     let result: CreateTopicsResponse = receive_response(socket, version).1;
 
     assert_eq!(result.throttle_time_ms, 0, "response throttle time");
 
     let topic = result.topics.first().unwrap();
 
-    assert_eq!(topic.name, topic_name, "topic name");
+    assert_eq!(&topic.name, topic_name, "topic name");
     assert_eq!(topic.error_code, 0, "topic error code");
     assert_eq!(topic.error_message, None, "topic error message");
 }
 
-fn produce_records(topic_name: TopicName, version: i16, records: Bytes, socket: &mut TcpStream) {
+fn produce_records(topic_name: &TopicName, version: i16, records: Bytes, socket: &mut TcpStream) {
     let header = RequestHeader::default()
         .with_request_api_key(ApiKey::Produce as i16)
         .with_request_api_version(version);
@@ -98,7 +98,7 @@ fn produce_records(topic_name: TopicName, version: i16, records: Bytes, socket: 
                 .with_index(0)
                 .with_records(Some(records))])]);
 
-    send_request(socket, header, request);
+    send_request(socket, &header, &request);
 
     let result: ProduceResponse = receive_response(socket, version).1;
 
@@ -106,7 +106,7 @@ fn produce_records(topic_name: TopicName, version: i16, records: Bytes, socket: 
 
     let topic_response = result.responses.first().unwrap();
     assert_eq!(
-        topic_response.name, topic_name,
+        &topic_response.name, topic_name,
         "produce response partition index"
     );
     let partition_response = topic_response.partition_responses.first().unwrap();
@@ -126,9 +126,9 @@ fn produce_records(topic_name: TopicName, version: i16, records: Bytes, socket: 
 }
 
 fn fetch_records(
-    topic_name: TopicName,
+    topic_name: &TopicName,
     api_version: i16,
-    expected: Vec<Record>,
+    expected: &[Record],
     (expected_record_version, expected_compression): (i8, Compression),
     socket: &mut TcpStream,
 ) {
@@ -142,7 +142,7 @@ fn fetch_records(
             .with_partition(0)
             .with_fetch_offset(0)])]);
 
-    send_request(socket, header, request);
+    send_request(socket, &header, &request);
 
     let result: FetchResponse = receive_response(socket, api_version).1;
 
@@ -152,7 +152,7 @@ fn fetch_records(
     let topic_response = result.responses.first().unwrap();
 
     assert_eq!(
-        topic_response.topic, topic_name,
+        &topic_response.topic, topic_name,
         "fetch response topic name"
     );
 
@@ -183,13 +183,11 @@ fn fetch_records(
     eprintln!("{expected:#?}");
     eprintln!("{fetched_records:#?}");
 
-    assert_eq!(
-        expected,
-        decoded_records
-            .into_iter()
-            .flat_map(|r| r.records)
-            .collect::<Vec<_>>()
-    );
+    let actual: Vec<_> = decoded_records
+        .into_iter()
+        .flat_map(|r| r.records)
+        .collect();
+    assert_eq!(expected, actual.as_slice());
 }
 
 fn new_record(offset: i64, v2: bool) -> Record {
@@ -201,14 +199,16 @@ fn new_record(offset: i64, v2: bool) -> Record {
         producer_epoch: -1,
         timestamp_type: TimestampType::Creation,
         timestamp: offset,
-        sequence: if v2 { offset as _ } else { -1 },
+        #[allow(clippy::cast_possible_truncation)]
+        sequence: if v2 { offset as i32 } else { -1 },
         offset,
         key: Some(format!("key{offset}").into()),
         value: Some(format!("value{offset}").into()),
-        headers: Default::default(),
+        headers: indexmap::IndexMap::default(),
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn compress_record_batch_data(
     src: &mut bytes::BytesMut,
     dest: &mut BytesMut,

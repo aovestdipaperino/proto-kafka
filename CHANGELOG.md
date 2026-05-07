@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.19.0
+
+### Breaking changes
+
+- `records::raw::rewrite_offset_delta` now returns `Result<Bytes>` instead of `Bytes`.
+- `records::raw::repack_batch` now returns `Result<Option<Bytes>>` instead of `Option<Bytes>`.
+- `records::raw::reassemble_batch` now returns `Result<Bytes>` instead of `Bytes`.
+- All public functions in `records::raw` now have `#[must_use]` attributes.
+
+### New features
+
+- New batch header accessors: `batch_length`, `batch_partition_leader_epoch`, `batch_magic`, `batch_last_offset_delta`, `batch_crc_valid`.
+- New error variant `ProtoError::MalformedRecord` for malformed raw record bytes.
+- Named constants for all batch header field offsets (`BASE_OFFSET_OFFSET`, `ATTRIBUTES_OFFSET`, etc.).
+
+### Improvements
+
+- **NASA Power-of-10 compliance:** eliminated all `.unwrap()`/`.expect()` calls from production code paths in `records::raw`; decomposed `extract_records` (143→24 lines) and `decode_batch_info` (112→57 lines) into smaller helpers; added `debug_assert!` preconditions on all batch accessor functions.
+- **Microsoft Rust guidelines compliance:** added `[lints.rust]` and `[lints.clippy]` tables to `Cargo.toml` with pedantic lints; added `// SAFETY:` comments on all `unsafe` blocks; removed redundant imports; fixed `trivial_numeric_casts`.
+- **Zero-copy safety:** `read_i64`/`read_i32`/`read_i16` now use `copy_from_slice` instead of `.try_into().unwrap()`.
+- Integration test clippy compliance (pedantic lint fixes across all test files).
+
+## 0.18.0
+
+- Add `records::raw` module for zero-copy Kafka V2 RecordBatch manipulation.
+
 ## 0.17.0
 
 - Breaking change:

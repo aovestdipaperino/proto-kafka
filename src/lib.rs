@@ -113,7 +113,7 @@
 
 pub mod compression;
 pub mod error;
-#[allow(clippy::all, clippy::pedantic)]
+#[allow(clippy::all, clippy::pedantic, redundant_imports)]
 pub mod messages;
 pub mod protocol;
 pub mod records;

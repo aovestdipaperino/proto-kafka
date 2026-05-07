@@ -19,7 +19,6 @@
 use super::{Decodable, Decoder, Encodable, Encoder, NewType, StrBytes};
 use crate::error::{ProtoError, Result};
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use std::convert::TryFrom;
 use std::string::String as StdString;
 
 macro_rules! define_copy_impl {

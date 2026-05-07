@@ -12,7 +12,7 @@ fn get_api_versions() {
         .with_request_api_version(version);
 
     let request = ApiVersionsRequest::default();
-    send_request(&mut socket, header, request);
+    send_request(&mut socket, &header, &request);
 
     let result: ApiVersionsResponse = receive_response(&mut socket, version).1;
 

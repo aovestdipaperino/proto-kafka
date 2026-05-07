@@ -371,6 +371,10 @@ impl SegmentedBuf {
     }
 }
 
+// SAFETY: `remaining_mut` returns the correct spare capacity, `advance_mut`
+// delegates to the inline `BytesMut` segment (which upholds the BufMut
+// contract), and `chunk_mut` returns an initialised spare-capacity slice
+// from the same inline segment.
 unsafe impl BufMut for SegmentedBuf {
     fn remaining_mut(&self) -> usize {
         usize::MAX - self.total_len

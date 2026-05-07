@@ -504,6 +504,14 @@ pub enum ProtoError {
         /// The size in bytes.
         size: usize,
     },
+
+    // === Raw record manipulation ===
+    /// A raw record's on-wire bytes are malformed (e.g. truncated varint).
+    #[error("malformed raw record: {detail}")]
+    MalformedRecord {
+        /// Description of the structural problem.
+        detail: &'static str,
+    },
 }
 
 impl From<crate::protocol::buf::NotEnoughBytesError> for ProtoError {

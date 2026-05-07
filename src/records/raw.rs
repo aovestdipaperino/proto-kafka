@@ -14,6 +14,7 @@
 //! [`Record`]: super::Record
 
 use bytes::{BufMut, Bytes, BytesMut};
+use crate::error::{ProtoError, Result};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,6 +33,32 @@ const CRC_COMPUTE_START: usize = 21;
 /// guarding against malformed data causing unbounded loops.
 const MAX_RECORDS: usize = 100_000;
 
+// Batch header field offsets (all big-endian).
+/// Byte offset of the base offset field (i64, bytes 0..7).
+const BASE_OFFSET_OFFSET: usize = 0;
+/// Byte offset of the batch length field (i32, bytes 8..11).
+const BATCH_LENGTH_OFFSET: usize = 8;
+/// Byte offset of the partition leader epoch field (i32, bytes 12..15).
+const PARTITION_LEADER_EPOCH_OFFSET: usize = 12;
+/// Byte offset of the magic byte (i8, byte 16).
+const MAGIC_OFFSET: usize = 16;
+/// Byte offset of the last offset delta field (i32, bytes 23..26).
+const LAST_OFFSET_DELTA_OFFSET: usize = 23;
+/// Byte offset of the attributes field (i16, bytes 21..22).
+const ATTRIBUTES_OFFSET: usize = 21;
+/// Byte offset of the base timestamp field (i64, bytes 27..34).
+const BASE_TIMESTAMP_OFFSET: usize = 27;
+/// Byte offset of the max timestamp field (i64, bytes 35..42).
+const MAX_TIMESTAMP_OFFSET: usize = 35;
+/// Byte offset of the producer ID field (i64, bytes 43..50).
+const PRODUCER_ID_OFFSET: usize = 43;
+/// Byte offset of the producer epoch field (i16, bytes 51..52).
+const PRODUCER_EPOCH_OFFSET: usize = 51;
+/// Byte offset of the base sequence field (i32, bytes 53..56).
+const BASE_SEQUENCE_OFFSET: usize = 53;
+/// Byte offset of the record count field (i32, bytes 57..60).
+const RECORD_COUNT_OFFSET: usize = 57;
+
 // ---------------------------------------------------------------------------
 // Varint helpers
 // ---------------------------------------------------------------------------
@@ -40,6 +67,7 @@ const MAX_RECORDS: usize = 100_000;
 ///
 /// Returns `Some((value, bytes_consumed))`, or `None` if the data is
 /// truncated or the varint exceeds 10 continuation bytes.
+#[must_use]
 pub fn decode_varint(data: &[u8]) -> Option<(i64, usize)> {
     let mut result: u64 = 0;
     let mut shift: u32 = 0;
@@ -57,6 +85,7 @@ pub fn decode_varint(data: &[u8]) -> Option<(i64, usize)> {
 }
 
 /// Encode an unsigned varint into a freshly-allocated `Vec<u8>`.
+#[must_use]
 pub fn encode_varint(mut value: u64) -> Vec<u8> {
     let mut buf = Vec::with_capacity(10);
     loop {
@@ -74,14 +103,16 @@ pub fn encode_varint(mut value: u64) -> Vec<u8> {
 }
 
 /// ZigZag-decode a signed value from its unsigned wire representation.
+#[must_use]
 pub fn zigzag_decode(n: i64) -> i64 {
     let n = n as u64;
     ((n >> 1) as i64) ^ (-((n & 1) as i64))
 }
 
 /// ZigZag-encode a signed value to its unsigned wire representation.
+#[must_use]
 pub fn zigzag_encode(n: i64) -> i64 {
-    ((n << 1) ^ (n >> 63)) as i64
+    (n << 1) ^ (n >> 63)
 }
 
 // ---------------------------------------------------------------------------
@@ -89,18 +120,36 @@ pub fn zigzag_encode(n: i64) -> i64 {
 // ---------------------------------------------------------------------------
 
 /// Read a big-endian `i64` from `data` at the given byte offset.
+///
+/// # Panics
+///
+/// Panics if `data.len() < offset + 8` (caller contract violation).
 fn read_i64(data: &[u8], offset: usize) -> i64 {
-    i64::from_be_bytes(data[offset..offset + 8].try_into().unwrap())
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&data[offset..offset + 8]);
+    i64::from_be_bytes(buf)
 }
 
 /// Read a big-endian `i32` from `data` at the given byte offset.
+///
+/// # Panics
+///
+/// Panics if `data.len() < offset + 4` (caller contract violation).
 fn read_i32(data: &[u8], offset: usize) -> i32 {
-    i32::from_be_bytes(data[offset..offset + 4].try_into().unwrap())
+    let mut buf = [0u8; 4];
+    buf.copy_from_slice(&data[offset..offset + 4]);
+    i32::from_be_bytes(buf)
 }
 
 /// Read a big-endian `i16` from `data` at the given byte offset.
+///
+/// # Panics
+///
+/// Panics if `data.len() < offset + 2` (caller contract violation).
 fn read_i16(data: &[u8], offset: usize) -> i16 {
-    i16::from_be_bytes(data[offset..offset + 2].try_into().unwrap())
+    let mut buf = [0u8; 2];
+    buf.copy_from_slice(&data[offset..offset + 2]);
+    i16::from_be_bytes(buf)
 }
 
 // ---------------------------------------------------------------------------
@@ -108,43 +157,160 @@ fn read_i16(data: &[u8], offset: usize) -> i16 {
 // ---------------------------------------------------------------------------
 
 /// Read the base offset (bytes 0..7) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_base_offset(batch: &[u8]) -> i64 {
-    read_i64(batch, 0)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i64(batch, BASE_OFFSET_OFFSET)
 }
 
 /// Read the attributes field (bytes 21..22) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_attributes(batch: &[u8]) -> i16 {
-    read_i16(batch, 21)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i16(batch, ATTRIBUTES_OFFSET)
 }
 
 /// Read the base timestamp (bytes 27..34) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_base_timestamp(batch: &[u8]) -> i64 {
-    read_i64(batch, 27)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i64(batch, BASE_TIMESTAMP_OFFSET)
 }
 
 /// Read the max timestamp (bytes 35..42) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_max_timestamp(batch: &[u8]) -> i64 {
-    read_i64(batch, 35)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i64(batch, MAX_TIMESTAMP_OFFSET)
 }
 
 /// Read the producer ID (bytes 43..50) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_producer_id(batch: &[u8]) -> i64 {
-    read_i64(batch, 43)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i64(batch, PRODUCER_ID_OFFSET)
 }
 
 /// Read the producer epoch (bytes 51..52) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_producer_epoch(batch: &[u8]) -> i16 {
-    read_i16(batch, 51)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i16(batch, PRODUCER_EPOCH_OFFSET)
 }
 
 /// Read the base sequence (bytes 53..56) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_base_sequence(batch: &[u8]) -> i32 {
-    read_i32(batch, 53)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i32(batch, BASE_SEQUENCE_OFFSET)
 }
 
 /// Read the record count (bytes 57..60) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
 pub fn batch_record_count(batch: &[u8]) -> i32 {
-    read_i32(batch, 57)
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i32(batch, RECORD_COUNT_OFFSET)
+}
+
+/// Read the batch length field (bytes 8..11).
+///
+/// This is the total size of the batch minus the leading 12 bytes
+/// (base_offset + batch_length itself).
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
+pub fn batch_length(batch: &[u8]) -> i32 {
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i32(batch, BATCH_LENGTH_OFFSET)
+}
+
+/// Read the partition leader epoch (bytes 12..15) from a raw batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
+pub fn batch_partition_leader_epoch(batch: &[u8]) -> i32 {
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i32(batch, PARTITION_LEADER_EPOCH_OFFSET)
+}
+
+/// Read the magic byte (byte 16) from a raw batch.
+///
+/// For Kafka V2 record batches this must be `2`.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
+pub fn batch_magic(batch: &[u8]) -> i8 {
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    batch[MAGIC_OFFSET] as i8
+}
+
+/// Read the last offset delta (bytes 23..26) from a raw batch.
+///
+/// This should equal `record_count - 1` for a well-formed batch.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
+pub fn batch_last_offset_delta(batch: &[u8]) -> i32 {
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    read_i32(batch, LAST_OFFSET_DELTA_OFFSET)
+}
+
+/// Verify CRC32C integrity of a raw batch.
+///
+/// Returns `true` if the CRC stored at bytes 17..20 matches the
+/// CRC computed over bytes 21..end.
+///
+/// # Panics
+///
+/// Panics if `batch.len() < RECORD_BATCH_HEADER_SIZE`.
+#[must_use]
+pub fn batch_crc_valid(batch: &[u8]) -> bool {
+    debug_assert!(batch.len() >= RECORD_BATCH_HEADER_SIZE);
+    let mut buf = [0u8; 4];
+    buf.copy_from_slice(&batch[CRC_OFFSET..CRC_OFFSET + 4]);
+    let stored = u32::from_be_bytes(buf);
+    let computed = crc32c::crc32c(&batch[CRC_COMPUTE_START..]);
+    stored == computed
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +335,7 @@ pub struct RawRecord {
 
 impl RawRecord {
     /// A tombstone is a record whose value is `None`.
+    #[must_use]
     pub fn is_tombstone(&self) -> bool {
         self.value.is_none()
     }
@@ -178,13 +345,128 @@ impl RawRecord {
 // Record extraction
 // ---------------------------------------------------------------------------
 
+/// Skip over record headers, advancing `offset` past each key-value pair.
+///
+/// Returns `Some(new_offset)` on success, or `None` if truncated.
+fn skip_record_headers(data: &[u8], mut offset: usize, header_count: usize) -> Option<usize> {
+    for _ in 0..header_count {
+        // header key length (signed zigzag)
+        let (raw_key_len, key_len_bytes) = decode_varint(data.get(offset..)?)?;
+        let key_len = zigzag_decode(raw_key_len);
+        offset += key_len_bytes;
+        if key_len > 0 {
+            offset += key_len as usize;
+        }
+        // header value length (signed zigzag)
+        let (raw_val_len, val_len_bytes) = decode_varint(data.get(offset..)?)?;
+        let val_len = zigzag_decode(raw_val_len);
+        offset += val_len_bytes;
+        if val_len > 0 {
+            offset += val_len as usize;
+        }
+    }
+    Some(offset)
+}
+
+/// Decode a nullable field (key or value) from the record body.
+///
+/// Returns `(field_value, new_offset)`, or `None` if truncated.
+fn decode_nullable_field(
+    batch_bytes: &Bytes,
+    data: &[u8],
+    offset: usize,
+) -> Option<(Option<Bytes>, usize)> {
+    let (raw_len, len_bytes) = decode_varint(data.get(offset..)?)?;
+    let field_length = zigzag_decode(raw_len);
+    let mut new_offset = offset + len_bytes;
+
+    let field = if field_length < 0 {
+        None
+    } else {
+        let fl = field_length as usize;
+        let abs_start = RECORD_BATCH_HEADER_SIZE + new_offset;
+        let f = batch_bytes.slice(abs_start..abs_start + fl);
+        new_offset += fl;
+        Some(f)
+    };
+    Some((field, new_offset))
+}
+
+/// Parse a single record starting at `offset` within the records section.
+///
+/// Returns `Some((record, next_offset))` on success, or `None` if the data
+/// is truncated or the record is malformed.
+fn parse_one_record(
+    batch_bytes: &Bytes,
+    data: &[u8],
+    offset: usize,
+    base_timestamp: i64,
+) -> Option<(RawRecord, usize)> {
+    let record_start = offset;
+
+    // record length (signed zigzag varint)
+    let (raw_len, len_bytes) = decode_varint(data.get(offset..)?)?;
+    let record_length = zigzag_decode(raw_len) as usize;
+    let mut pos = offset + len_bytes;
+    let record_end = pos + record_length;
+
+    // attributes (i8) — skip
+    pos += 1;
+
+    // timestamp delta (signed zigzag)
+    let (raw_ts, ts_bytes) = decode_varint(data.get(pos..)?)?;
+    let timestamp_delta = zigzag_decode(raw_ts);
+    pos += ts_bytes;
+
+    // offset delta (signed zigzag) — skip value
+    let (_raw_od, od_bytes) = decode_varint(data.get(pos..)?)?;
+    pos += od_bytes;
+
+    // key
+    let (key, new_pos) = decode_nullable_field(batch_bytes, data, pos)?;
+    pos = new_pos;
+
+    // value
+    let (value, new_pos) = decode_nullable_field(batch_bytes, data, pos)?;
+    pos = new_pos;
+
+    // headers
+    let (raw_hdr_count, hc_bytes) = decode_varint(data.get(pos..)?)?;
+    let header_count = zigzag_decode(raw_hdr_count) as usize;
+    pos += hc_bytes;
+    pos = skip_record_headers(data, pos, header_count)?;
+
+    // Validate: parsed length must match declared record_length.
+    if pos != record_end {
+        return None;
+    }
+
+    let record_bytes = batch_bytes.slice(
+        RECORD_BATCH_HEADER_SIZE + record_start..RECORD_BATCH_HEADER_SIZE + record_end,
+    );
+
+    Some((
+        RawRecord {
+            key,
+            value,
+            record_bytes,
+            timestamp: base_timestamp + timestamp_delta,
+        },
+        record_end,
+    ))
+}
+
 /// Parse the records section of a Kafka V2 RecordBatch.
 ///
 /// `batch_bytes` must contain the **entire** batch (header + records).
 /// `base_timestamp` is the batch-level base timestamp used to resolve deltas.
 ///
-/// Returns one [`RawRecord`] per record found.
+/// Returns one [`RawRecord`] per record found. Malformed trailing records
+/// are silently skipped.
+#[must_use]
 pub fn extract_records(batch_bytes: &Bytes, base_timestamp: i64) -> Vec<RawRecord> {
+    debug_assert!(!batch_bytes.is_empty(), "batch_bytes must not be empty");
+
     if batch_bytes.len() <= RECORD_BATCH_HEADER_SIZE {
         return Vec::new();
     }
@@ -193,138 +475,17 @@ pub fn extract_records(batch_bytes: &Bytes, base_timestamp: i64) -> Vec<RawRecor
     let mut offset = 0;
     let mut records = Vec::new();
 
-    while offset < data.len() {
-        if records.len() >= MAX_RECORDS {
-            break;
-        }
-
-        let record_start = offset;
-
-        // --- record length (signed zigzag varint) ---
-        let (raw_len, len_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let record_length = zigzag_decode(raw_len) as usize;
-        offset += len_bytes;
-
-        // The total on-wire size for this record is the length-varint + body.
-        let record_end = offset + record_length;
-
-        // --- attributes (i8) ---
-        offset += 1;
-
-        // --- timestamp delta (signed zigzag) ---
-        let (raw_ts, ts_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let timestamp_delta = zigzag_decode(raw_ts);
-        offset += ts_bytes;
-
-        // --- offset delta (signed zigzag) ---
-        let (raw_od, od_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let _offset_delta = zigzag_decode(raw_od);
-        offset += od_bytes;
-
-        // --- key ---
-        let (raw_key_len, kl_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let key_length = zigzag_decode(raw_key_len);
-        offset += kl_bytes;
-
-        let key = if key_length < 0 {
-            None
-        } else {
-            let kl = key_length as usize;
-            let k = batch_bytes
-                .slice(RECORD_BATCH_HEADER_SIZE + offset..RECORD_BATCH_HEADER_SIZE + offset + kl);
-            offset += kl;
-            Some(k)
-        };
-
-        // --- value ---
-        let (raw_val_len, vl_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let value_length = zigzag_decode(raw_val_len);
-        offset += vl_bytes;
-
-        let value = if value_length < 0 {
-            None
-        } else {
-            let vl = value_length as usize;
-            let v = batch_bytes
-                .slice(RECORD_BATCH_HEADER_SIZE + offset..RECORD_BATCH_HEADER_SIZE + offset + vl);
-            offset += vl;
-            Some(v)
-        };
-
-        // --- headers ---
-        let (raw_hdr_count, hc_bytes) = match decode_varint(&data[offset..]) {
-            Some(v) => v,
-            None => break,
-        };
-        let header_count = zigzag_decode(raw_hdr_count) as usize;
-        offset += hc_bytes;
-
-        let mut header_ok = true;
-        for _ in 0..header_count {
-            // header key length (signed zigzag)
-            let (raw_hkl, hkl_bytes) = match decode_varint(&data[offset..]) {
-                Some(v) => v,
-                None => {
-                    header_ok = false;
-                    break;
-                }
-            };
-            let hkl = zigzag_decode(raw_hkl);
-            offset += hkl_bytes;
-            if hkl > 0 {
-                offset += hkl as usize;
+    while offset < data.len() && records.len() < MAX_RECORDS {
+        match parse_one_record(batch_bytes, data, offset, base_timestamp) {
+            Some((record, next_offset)) => {
+                records.push(record);
+                offset = next_offset;
             }
-            // header value length (signed zigzag)
-            let (raw_hvl, hvl_bytes) = match decode_varint(&data[offset..]) {
-                Some(v) => v,
-                None => {
-                    header_ok = false;
-                    break;
-                }
-            };
-            let hvl = zigzag_decode(raw_hvl);
-            offset += hvl_bytes;
-            if hvl > 0 {
-                offset += hvl as usize;
-            }
+            None => break,
         }
-        if !header_ok {
-            break;
-        }
-
-        // Skip malformed record instead of panicking on external data.
-        if offset != record_end {
-            offset = record_end;
-            continue;
-        }
-
-        let record_bytes = batch_bytes.slice(
-            RECORD_BATCH_HEADER_SIZE + record_start..RECORD_BATCH_HEADER_SIZE + record_end,
-        );
-
-        records.push(RawRecord {
-            key,
-            value,
-            record_bytes,
-            timestamp: base_timestamp + timestamp_delta,
-        });
     }
 
+    debug_assert!(records.len() <= MAX_RECORDS);
     records
 }
 
@@ -345,22 +506,29 @@ pub fn extract_records(batch_bytes: &Bytes, base_timestamp: i64) -> Vec<RawRecor
 ///
 /// After rewriting `offset_delta` the `record_length` varint is recalculated
 /// because the replacement varint may differ in encoded size.
-pub fn rewrite_offset_delta(record_bytes: &Bytes, new_offset_delta: i64) -> Bytes {
+/// # Errors
+///
+/// Returns [`ProtoError::MalformedRecord`] if any varint in the record is
+/// truncated or otherwise invalid.
+pub fn rewrite_offset_delta(record_bytes: &Bytes, new_offset_delta: i64) -> Result<Bytes> {
     let data = &record_bytes[..];
 
     // 1. Decode record_length varint
-    let (_raw_len, len_varint_bytes) = decode_varint(data).expect("valid record_length varint");
+    let (_raw_len, len_varint_bytes) = decode_varint(data)
+        .ok_or(ProtoError::MalformedRecord { detail: "truncated record_length varint" })?;
     let body_start = len_varint_bytes;
 
     // 2. Skip attributes (1 byte)
     let mut pos = body_start + 1;
 
     // 3. Skip timestamp_delta varint
-    let (_ts_raw, ts_bytes) = decode_varint(&data[pos..]).expect("valid timestamp_delta varint");
+    let (_ts_raw, ts_bytes) = decode_varint(data.get(pos..).unwrap_or_default())
+        .ok_or(ProtoError::MalformedRecord { detail: "truncated timestamp_delta varint" })?;
     pos += ts_bytes;
 
     // 4. Decode existing offset_delta varint (so we know how many bytes it occupies)
-    let (_od_raw, od_bytes) = decode_varint(&data[pos..]).expect("valid offset_delta varint");
+    let (_od_raw, od_bytes) = decode_varint(data.get(pos..).unwrap_or_default())
+        .ok_or(ProtoError::MalformedRecord { detail: "truncated offset_delta varint" })?;
     let od_start = pos;
     let od_end = pos + od_bytes;
 
@@ -382,7 +550,7 @@ pub fn rewrite_offset_delta(record_bytes: &Bytes, new_offset_delta: i64) -> Byte
     buf.extend_from_slice(prefix);
     buf.extend_from_slice(&new_od_encoded);
     buf.extend_from_slice(suffix);
-    buf.freeze()
+    Ok(buf.freeze())
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +562,7 @@ pub fn rewrite_offset_delta(record_bytes: &Bytes, new_offset_delta: i64) -> Byte
 ///
 /// Writes all header fields in big-endian order, appends `record_bytes`, and
 /// computes the CRC32C.
+#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn build_batch(
     base_offset: i64,
@@ -467,22 +636,26 @@ pub fn build_batch(
 /// The returned batch preserves the original producer metadata and timestamps
 /// so that idempotent / transactional guarantees are not broken for the
 /// remaining records.
+/// # Errors
+///
+/// Returns [`ProtoError::MalformedRecord`] if a kept record's on-wire bytes
+/// contain a truncated varint.
 pub fn repack_batch(
     batch_bytes: &Bytes,
     base_offset: i64,
     keep: impl Fn(usize, &RawRecord) -> bool,
-) -> Option<Bytes> {
+) -> Result<Option<Bytes>> {
     if batch_bytes.len() < RECORD_BATCH_HEADER_SIZE {
-        return None;
+        return Ok(None);
     }
 
     // Read original header fields
-    let base_timestamp = read_i64(batch_bytes, 27);
-    let max_timestamp = read_i64(batch_bytes, 35);
-    let producer_id = read_i64(batch_bytes, 43);
-    let producer_epoch = read_i16(batch_bytes, 51);
-    let base_sequence = read_i32(batch_bytes, 53);
-    let attributes = read_i16(batch_bytes, 21);
+    let base_timestamp = read_i64(batch_bytes, BASE_TIMESTAMP_OFFSET);
+    let max_timestamp = read_i64(batch_bytes, MAX_TIMESTAMP_OFFSET);
+    let producer_id = read_i64(batch_bytes, PRODUCER_ID_OFFSET);
+    let producer_epoch = read_i16(batch_bytes, PRODUCER_EPOCH_OFFSET);
+    let base_sequence = read_i32(batch_bytes, BASE_SEQUENCE_OFFSET);
+    let attributes = read_i16(batch_bytes, ATTRIBUTES_OFFSET);
 
     // Extract all records
     let records = extract_records(batch_bytes, base_timestamp);
@@ -495,16 +668,16 @@ pub fn repack_batch(
         if !keep(i, record) {
             continue;
         }
-        let rewritten = rewrite_offset_delta(&record.record_bytes, kept_count as i64);
+        let rewritten = rewrite_offset_delta(&record.record_bytes, kept_count as i64)?;
         record_buf.extend_from_slice(&rewritten);
         kept_count += 1;
     }
 
     if kept_count == 0 {
-        return None;
+        return Ok(None);
     }
 
-    Some(build_batch(
+    Ok(Some(build_batch(
         base_offset,
         base_timestamp,
         max_timestamp,
@@ -514,7 +687,7 @@ pub fn repack_batch(
         attributes,
         kept_count,
         &record_buf,
-    ))
+    )))
 }
 
 /// Assemble a new RecordBatch from individual records.
@@ -525,7 +698,11 @@ pub fn repack_batch(
 ///
 /// The produced batch has no idempotent producer metadata (`producerId = -1`,
 /// `producerEpoch = -1`, `baseSequence = -1`).
-pub fn reassemble_batch(records: &[(Bytes, i64)], base_offset: i64) -> Bytes {
+/// # Errors
+///
+/// Returns [`ProtoError::MalformedRecord`] if any record's on-wire bytes
+/// contain a truncated varint.
+pub fn reassemble_batch(records: &[(Bytes, i64)], base_offset: i64) -> Result<Bytes> {
     let record_count = records.len() as i32;
 
     // Determine base and max timestamps
@@ -535,11 +712,11 @@ pub fn reassemble_batch(records: &[(Bytes, i64)], base_offset: i64) -> Bytes {
     // Rewrite offset deltas to be contiguous and concatenate
     let mut record_buf = BytesMut::new();
     for (i, (rec_bytes, _ts)) in records.iter().enumerate() {
-        let rewritten = rewrite_offset_delta(rec_bytes, i as i64);
+        let rewritten = rewrite_offset_delta(rec_bytes, i as i64)?;
         record_buf.extend_from_slice(&rewritten);
     }
 
-    build_batch(
+    Ok(build_batch(
         base_offset,
         base_timestamp,
         max_timestamp,
@@ -549,7 +726,7 @@ pub fn reassemble_batch(records: &[(Bytes, i64)], base_offset: i64) -> Bytes {
         0,  // attributes — no compression, no txn
         record_count,
         &record_buf,
-    )
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -676,6 +853,7 @@ mod tests {
 
     /// Build a minimal Kafka V2 RecordBatch from the given records.
     /// Each record entry is (key, value, timestamp_delta).
+    #[allow(clippy::type_complexity)]
     fn build_test_batch(
         _base_timestamp: i64,
         records: &[(Option<&[u8]>, Option<&[u8]>, i64)],
@@ -829,7 +1007,7 @@ mod tests {
     #[test]
     fn rewrite_offset_delta_preserves_content() {
         let original = make_record(Some(b"key"), Some(b"val"), 10, 5);
-        let rewritten = rewrite_offset_delta(&original, 0);
+        let rewritten = rewrite_offset_delta(&original, 0).unwrap();
 
         // Parse the rewritten record and verify offset_delta is now 0
         let (raw_len, len_bytes) = decode_varint(&rewritten).expect("valid varint");
@@ -885,7 +1063,7 @@ mod tests {
 
         let records = vec![(r0, 1000i64), (r1, 1005i64), (r2, 1010i64)];
 
-        let batch = reassemble_batch(&records, 42);
+        let batch = reassemble_batch(&records, 42).unwrap();
 
         assert_eq!(batch_base_offset(&batch), 42);
         assert_eq!(batch[16], 2, "magic byte should be 2");
@@ -924,8 +1102,9 @@ mod tests {
         );
 
         // Remove record 1 (middle record)
-        let repacked =
-            repack_batch(&batch, 0, |i, _rec| i != 1).expect("should return Some when some kept");
+        let repacked = repack_batch(&batch, 0, |i, _rec| i != 1)
+            .unwrap()
+            .expect("should return Some when some kept");
 
         assert_eq!(batch_record_count(&repacked), 2);
         assert_eq!(read_i32(&repacked, 23), 1, "lastOffsetDelta after repack");
@@ -948,7 +1127,9 @@ mod tests {
         let batch = build_batch(0, 1000, 1000, -1, -1, -1, 0, 1, &r0);
 
         assert!(
-            repack_batch(&batch, 0, |_, _| false).is_none(),
+            repack_batch(&batch, 0, |_, _| false)
+                .unwrap()
+                .is_none(),
             "should return None when all records removed"
         );
     }
@@ -968,5 +1149,210 @@ mod tests {
         assert_eq!(batch_producer_epoch(&batch), 7);
         assert_eq!(batch_base_sequence(&batch), 42);
         assert_eq!(batch_record_count(&batch), 1);
+    }
+
+    #[test]
+    fn batch_header_accessors_extended() {
+        let r0 = make_record(Some(b"k"), Some(b"v"), 0, 0);
+        let r1 = make_record(Some(b"k2"), Some(b"v2"), 5, 1);
+        let batch = build_batch(10, 5000, 5005, 123, 7, 42, 0, 2, &{
+            let mut buf = BytesMut::new();
+            buf.extend_from_slice(&r0);
+            buf.extend_from_slice(&r1);
+            buf.freeze()
+        });
+
+        assert_eq!(batch_magic(&batch), 2, "V2 magic byte");
+        assert_eq!(batch_last_offset_delta(&batch), 1, "record_count-1");
+        assert_eq!(batch_partition_leader_epoch(&batch), 0);
+        assert!(batch_crc_valid(&batch), "CRC must be valid after build");
+        assert!(batch_length(&batch) > 0, "batch_length must be positive");
+    }
+
+    // -- Nuance: zero-copy non-mutation (KAFKA-PROTOCOL-NUANCES 6b) ----------
+
+    #[test]
+    fn rewrite_offset_delta_does_not_mutate_original() {
+        // Section 6b: mutating stored records corrupts metadata for
+        // other consumers sharing the same Bytes via refcounting.
+        let original = make_record(Some(b"key"), Some(b"val"), 10, 5);
+        let original_copy = original.clone();
+
+        let _rewritten = rewrite_offset_delta(&original, 99).unwrap();
+
+        assert_eq!(
+            original, original_copy,
+            "original Bytes must not be mutated by rewrite"
+        );
+    }
+
+    #[test]
+    fn repack_does_not_mutate_source_batch() {
+        // Section 6b: repack creates a new batch; source must be untouched.
+        let r0 = make_record(Some(b"k0"), Some(b"v0"), 0, 0);
+        let r1 = make_record(Some(b"k1"), Some(b"v1"), 5, 1);
+        let mut record_buf = BytesMut::new();
+        record_buf.extend_from_slice(&r0);
+        record_buf.extend_from_slice(&r1);
+        let batch = build_batch(0, 1000, 1005, 42, 1, 0, 0, 2, &record_buf);
+        let batch_copy = batch.clone();
+
+        let _repacked = repack_batch(&batch, 0, |i, _| i == 0).unwrap();
+
+        assert_eq!(batch, batch_copy, "source batch must not be mutated");
+    }
+
+    // -- Nuance: producer metadata preservation (KAFKA-PROTOCOL-NUANCES 5a) --
+
+    #[test]
+    fn repack_preserves_idempotent_producer_metadata() {
+        // Section 5a: duplicate batch detection relies on producer_id, epoch,
+        // and base_sequence being preserved through repack operations.
+        let r0 = make_record(Some(b"k0"), Some(b"v0"), 0, 0);
+        let r1 = make_record(Some(b"k1"), Some(b"v1"), 5, 1);
+        let mut record_buf = BytesMut::new();
+        record_buf.extend_from_slice(&r0);
+        record_buf.extend_from_slice(&r1);
+
+        let producer_id = 12345_i64;
+        let producer_epoch = 3_i16;
+        let base_sequence = 100_i32;
+
+        let batch = build_batch(
+            0, 1000, 1005,
+            producer_id, producer_epoch, base_sequence,
+            0, 2, &record_buf,
+        );
+
+        // Remove one record — metadata must survive
+        let repacked = repack_batch(&batch, 0, |i, _| i == 0)
+            .unwrap()
+            .expect("at least one record kept");
+
+        assert_eq!(batch_producer_id(&repacked), producer_id);
+        assert_eq!(batch_producer_epoch(&repacked), producer_epoch);
+        assert_eq!(batch_base_sequence(&repacked), base_sequence);
+        assert!(batch_crc_valid(&repacked), "CRC must be valid after repack");
+    }
+
+    // -- Nuance: V2 batch invariants (KAFKA-PROTOCOL-NUANCES 5c, 6a) --------
+
+    #[test]
+    fn build_batch_produces_valid_v2_invariants() {
+        // Section 5c: clients send V2 batches with baseOffset=0.
+        // Section 6a: one batch should hold multiple records with correct
+        // base_offset, last_offset_delta, and record_count.
+        let r0 = make_record(Some(b"a"), Some(b"1"), 0, 0);
+        let r1 = make_record(Some(b"b"), Some(b"2"), 5, 1);
+        let r2 = make_record(Some(b"c"), Some(b"3"), 10, 2);
+        let mut record_buf = BytesMut::new();
+        record_buf.extend_from_slice(&r0);
+        record_buf.extend_from_slice(&r1);
+        record_buf.extend_from_slice(&r2);
+
+        let batch = build_batch(0, 1000, 1010, -1, -1, -1, 0, 3, &record_buf);
+
+        // V2 invariants
+        assert_eq!(batch_magic(&batch), 2, "must be V2");
+        assert_eq!(batch_base_offset(&batch), 0, "clients send baseOffset=0");
+        assert_eq!(batch_record_count(&batch), 3);
+        assert_eq!(
+            batch_last_offset_delta(&batch), 2,
+            "last_offset_delta must equal record_count - 1"
+        );
+        assert!(batch_crc_valid(&batch));
+
+        // All 3 records should be extractable
+        let records = extract_records(&batch, batch_base_timestamp(&batch));
+        assert_eq!(records.len(), 3, "all records must be recoverable");
+    }
+
+    // -- Nuance: empty batch handling (KAFKA-PROTOCOL-NUANCES 1a) ------------
+
+    #[test]
+    fn extract_records_from_zero_record_batch() {
+        // Section 1a: an empty Bytes is a valid zero-record batch.
+        // A batch header with record_count=0 and no record payload is valid.
+        let batch = build_batch(0, 0, 0, -1, -1, -1, 0, 0, &[]);
+
+        assert_eq!(batch_record_count(&batch), 0);
+        assert!(batch_crc_valid(&batch));
+
+        let records = extract_records(&batch, 0);
+        assert!(records.is_empty(), "zero-record batch must yield no records");
+    }
+
+    // -- Nuance: CRC corruption detection ------------------------------------
+
+    #[test]
+    fn batch_crc_detects_bit_flip() {
+        let r0 = make_record(Some(b"k"), Some(b"v"), 0, 0);
+        let batch = build_batch(0, 1000, 1000, -1, -1, -1, 0, 1, &r0);
+        assert!(batch_crc_valid(&batch));
+
+        // Flip a bit in the records section
+        let mut corrupted = BytesMut::from(&batch[..]);
+        let last = corrupted.len() - 1;
+        corrupted[last] ^= 0x01;
+        let corrupted = corrupted.freeze();
+
+        assert!(!batch_crc_valid(&corrupted), "CRC must detect corruption");
+    }
+
+    // -- Nuance: offset delta accounting after repack (KAFKA-PROTOCOL-NUANCES 6a)
+
+    #[test]
+    fn repack_reindexes_offset_deltas_contiguously() {
+        // After removing records, offset deltas must be contiguous 0..N-1.
+        // Section 6a: correct last_offset_delta is critical for consumers.
+        let r0 = make_record(Some(b"k0"), Some(b"v0"), 0, 0);
+        let r1 = make_record(Some(b"k1"), Some(b"v1"), 5, 1);
+        let r2 = make_record(Some(b"k2"), Some(b"v2"), 10, 2);
+        let r3 = make_record(Some(b"k3"), Some(b"v3"), 15, 3);
+        let mut record_buf = BytesMut::new();
+        record_buf.extend_from_slice(&r0);
+        record_buf.extend_from_slice(&r1);
+        record_buf.extend_from_slice(&r2);
+        record_buf.extend_from_slice(&r3);
+
+        let batch = build_batch(0, 1000, 1015, -1, -1, -1, 0, 4, &record_buf);
+
+        // Keep records 0 and 3, remove 1 and 2
+        let repacked = repack_batch(&batch, 100, |i, _| i == 0 || i == 3)
+            .unwrap()
+            .expect("some records kept");
+
+        assert_eq!(batch_record_count(&repacked), 2);
+        assert_eq!(
+            batch_last_offset_delta(&repacked), 1,
+            "last_offset_delta must be record_count-1 after reindex"
+        );
+        assert_eq!(batch_base_offset(&repacked), 100, "base_offset from caller");
+        assert!(batch_crc_valid(&repacked));
+
+        // Verify both records are extractable
+        let records = extract_records(&repacked, batch_base_timestamp(&repacked));
+        assert_eq!(records.len(), 2);
+    }
+
+    // -- Nuance: malformed varint returns error, not panic -------------------
+
+    #[test]
+    fn rewrite_offset_delta_on_empty_bytes_returns_error() {
+        let empty = Bytes::new();
+        assert!(
+            rewrite_offset_delta(&empty, 0).is_err(),
+            "empty record bytes must return Err, not panic"
+        );
+    }
+
+    #[test]
+    fn rewrite_offset_delta_on_truncated_record_returns_error() {
+        // A single byte is a valid start of a varint but not a valid record
+        let truncated = Bytes::from_static(&[0x05]);
+        assert!(
+            rewrite_offset_delta(&truncated, 0).is_err(),
+            "truncated record must return Err"
+        );
     }
 }

@@ -44,14 +44,15 @@ pub fn connect_to_kafka(container: &Container<GenericImage>) -> TcpStream {
 
 pub fn send_request<T: Encodable + HeaderVersion>(
     socket: &mut TcpStream,
-    header: RequestHeader,
-    body: T,
+    header: &RequestHeader,
+    body: &T,
 ) {
     let mut bytes = BytesMut::new();
 
-    encode_request_header_into_buffer(&mut bytes, &header).unwrap();
+    encode_request_header_into_buffer(&mut bytes, header).unwrap();
     body.encode(&mut bytes, header.request_api_version).unwrap();
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     let size = bytes.len() as i32;
     socket.write_all(&size.to_be_bytes()).unwrap();
     socket.write_all(&bytes).unwrap();

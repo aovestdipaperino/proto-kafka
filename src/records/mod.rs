@@ -71,7 +71,7 @@ use crate::protocol::{
 
 use super::compression::{self as cmpr, Compressor, Decompressor};
 use std::cmp::Ordering;
-use std::convert::TryFrom;
+
 
 /// IEEE (checksum) cyclic redundancy check.
 pub const IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
@@ -643,88 +643,44 @@ impl RecordBatchDecoder {
         Ok((version, compression))
     }
 
-    fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
-        debug_assert!(
-            version == 2,
-            "only v2 batch decoding is supported, got v{version}"
-        );
-        // Base offset
-        let min_offset = types::Int64.decode(buf)?;
-
-        // Batch length
-        let batch_length: i32 = types::Int32.decode(buf)?;
-        if batch_length < 0 {
-            return Err(ProtoError::NegativeLength {
-                field: "batch size",
-                value: batch_length as i64,
-            });
-        }
-
-        // Convert buf to bytes
-        let buf = &mut buf.try_get_bytes(batch_length as usize)?;
-
-        // Partition leader epoch
-        let partition_leader_epoch = types::Int32.decode(buf)?;
-
-        // Magic byte
-        let magic: i8 = types::Int8.decode(buf)?;
-        if magic != version {
-            return Err(ProtoError::VersionMismatch {
-                expected: version,
-                actual: magic,
-            });
-        }
-
-        // CRC
-        let supplied_crc: u32 = types::UInt32.decode(buf)?;
-        let actual_crc = crc32c(buf);
-
-        if supplied_crc != actual_crc {
-            return Err(ProtoError::CrcMismatch {
-                expected: actual_crc,
-                actual: supplied_crc,
-            });
-        }
-
-        // Attributes
-        let attributes: i16 = types::Int16.decode(buf)?;
-        let transactional = (attributes & (1 << 4)) != 0;
-        let control = (attributes & (1 << 5)) != 0;
+    /// Decode the attributes word into compression, timestamp type, and flags.
+    fn decode_attributes(
+        attributes: i16,
+    ) -> Result<(Compression, TimestampType, bool, bool)> {
         let compression = match attributes & 0x7 {
             0 => Compression::None,
             1 => Compression::Gzip,
             2 => Compression::Snappy,
             3 => Compression::Lz4,
             4 => Compression::Zstd,
-            other => {
-                return Err(ProtoError::UnknownCompression { algorithm: other });
-            }
+            other => return Err(ProtoError::UnknownCompression { algorithm: other }),
         };
         let timestamp_type = if (attributes & (1 << 3)) != 0 {
             TimestampType::LogAppend
         } else {
             TimestampType::Creation
         };
+        let transactional = (attributes & (1 << 4)) != 0;
+        let control = (attributes & (1 << 5)) != 0;
 
-        // Last offset delta
+        debug_assert!(
+            compression as u8 <= 4,
+            "compression variant out of range"
+        );
+        Ok((compression, timestamp_type, transactional, control))
+    }
+
+    /// Decode the remaining batch fields after the attributes.
+    fn decode_batch_fields<B: ByteBuf>(
+        buf: &mut B,
+    ) -> Result<(i64, i64, i16, i32, usize)> {
         let _max_offset_delta: i32 = types::Int32.decode(buf)?;
-
-        // First timestamp
         let min_timestamp = types::Int64.decode(buf)?;
-
-        // Last timestamp
         let _max_timestamp: i64 = types::Int64.decode(buf)?;
-
-        // Producer ID
         let producer_id = types::Int64.decode(buf)?;
-
-        // Producer epoch
         let producer_epoch = types::Int16.decode(buf)?;
-
-        // Base sequence
         let base_sequence = types::Int32.decode(buf)?;
 
-        // Record count
         let record_count: i32 = types::Int32.decode(buf)?;
         if record_count < 0 {
             return Err(ProtoError::NegativeLength {
@@ -737,6 +693,49 @@ impl RecordBatchDecoder {
             i32::try_from(record_count).is_ok(),
             "record_count ({record_count}) must fit in i32"
         );
+
+        Ok((min_timestamp, producer_id, producer_epoch, base_sequence, record_count))
+    }
+
+    fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
+        debug_assert!(
+            version == 2,
+            "only v2 batch decoding is supported, got v{version}"
+        );
+
+        let min_offset = types::Int64.decode(buf)?;
+        let batch_length: i32 = types::Int32.decode(buf)?;
+        if batch_length < 0 {
+            return Err(ProtoError::NegativeLength {
+                field: "batch size",
+                value: batch_length as i64,
+            });
+        }
+
+        let buf = &mut buf.try_get_bytes(batch_length as usize)?;
+        let partition_leader_epoch = types::Int32.decode(buf)?;
+        let magic: i8 = types::Int8.decode(buf)?;
+        if magic != version {
+            return Err(ProtoError::VersionMismatch {
+                expected: version,
+                actual: magic,
+            });
+        }
+
+        let supplied_crc: u32 = types::UInt32.decode(buf)?;
+        let actual_crc = crc32c(buf);
+        if supplied_crc != actual_crc {
+            return Err(ProtoError::CrcMismatch {
+                expected: actual_crc,
+                actual: supplied_crc,
+            });
+        }
+
+        let attributes: i16 = types::Int16.decode(buf)?;
+        let (compression, timestamp_type, transactional, control) =
+            Self::decode_attributes(attributes)?;
+        let (min_timestamp, producer_id, producer_epoch, base_sequence, record_count) =
+            Self::decode_batch_fields(buf)?;
 
         Ok((
             BatchDecodeInfo {
@@ -1127,8 +1126,6 @@ impl Record {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-
     use super::*;
 
     #[test]
