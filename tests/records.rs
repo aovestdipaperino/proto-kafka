@@ -302,3 +302,131 @@ fn roundtrip_v1_snappy() {
     let decoded = RecordBatchDecoder::decode(&mut decode_buf).unwrap();
     assert_eq!(decoded.len(), 2);
 }
+
+#[test]
+fn encode_invalid_version_returns_error() {
+    let record = make_record(0, "k", "v");
+    let options = RecordEncodeOptions {
+        version: 99,
+        compression: Compression::None,
+    };
+
+    // In debug builds the `debug_assert!` inside encode() panics; in release it
+    // returns an Err.  Either outcome proves the invalid version is rejected.
+    let outcome = std::panic::catch_unwind(|| {
+        let mut buf = BytesMut::new();
+        RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options)
+    });
+    match outcome {
+        Err(_panic) => { /* debug_assert! fired — version correctly rejected */ }
+        Ok(result) => {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().is_invalid_data());
+        }
+    }
+}
+
+#[test]
+fn encode_unsupported_compression_returns_error() {
+    let record = make_record(0, "k", "v");
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::Lz4,
+    };
+
+    let mut buf = BytesMut::new();
+    let result = RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options);
+    assert!(result.is_err());
+}
+
+#[test]
+fn decode_truncated_buffer_returns_error() {
+    let record = make_record(0, "k", "v");
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options).unwrap();
+
+    let truncated = Bytes::from(buf[..10].to_vec());
+    let result = RecordBatchDecoder::decode(&mut truncated.clone());
+    assert!(result.is_err());
+}
+
+#[test]
+fn decode_corrupted_crc_returns_error() {
+    let record = make_record(0, "k", "v");
+    let options = RecordEncodeOptions {
+        version: 2,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options).unwrap();
+
+    let mut corrupted = buf.to_vec();
+    if corrupted.len() > 30 {
+        corrupted[30] ^= 0xFF;
+    }
+    let result = RecordBatchDecoder::decode(&mut Bytes::from(corrupted));
+    assert!(result.is_err());
+}
+
+#[test]
+fn encode_legacy_with_headers_returns_error() {
+    let mut headers = IndexMap::new();
+    headers.insert(
+        StrBytes::try_from(Bytes::from("h")).unwrap(),
+        Some(Bytes::from("v")),
+    );
+    let record = Record {
+        transactional: false,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 0,
+        sequence: NO_SEQUENCE,
+        timestamp: 1000,
+        key: Some(Bytes::from("k")),
+        value: Some(Bytes::from("v")),
+        headers,
+    };
+    let options = RecordEncodeOptions {
+        version: 1,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    let result = RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options);
+    assert!(result.is_err());
+}
+
+#[test]
+fn encode_legacy_transactional_returns_error() {
+    let record = Record {
+        transactional: true,
+        control: false,
+        partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+        producer_id: NO_PRODUCER_ID,
+        producer_epoch: NO_PRODUCER_EPOCH,
+        timestamp_type: TimestampType::Creation,
+        offset: 0,
+        sequence: NO_SEQUENCE,
+        timestamp: 1000,
+        key: Some(Bytes::from("k")),
+        value: Some(Bytes::from("v")),
+        headers: IndexMap::new(),
+    };
+    let options = RecordEncodeOptions {
+        version: 0,
+        compression: Compression::None,
+    };
+
+    let mut buf = BytesMut::new();
+    let result = RecordBatchEncoder::encode(&mut buf, std::iter::once(&record), &options);
+    assert!(result.is_err());
+}
