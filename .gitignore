@@ -5,3 +5,4 @@
 kafka_repo
 .codegraph
 docs/superpowers/
+.tokensave/
