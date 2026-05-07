@@ -13,15 +13,18 @@ use super::{Compressor, Decompressor};
 
 /// Gzip compression algorithm. See [Kafka's broker configuration](https://kafka.apache.org/documentation/#brokerconfigs_compression.type)
 /// for more information.
+#[derive(Debug)]
 pub struct Gzip;
 
+#[allow(clippy::needless_pass_by_value)] // map_err passes by value; no ref version works
 fn compression_err(e: std::io::Error) -> EncodeError {
-    error!("Error whilst compressing data: {}", e);
+    error!("Error whilst compressing data: {e}");
     EncodeError { kind: EncodeErrorKind::InvalidData }
 }
 
+#[allow(clippy::needless_pass_by_value)] // map_err passes by value; no ref version works
 fn decompression_err(e: std::io::Error) -> DecodeError {
-    error!("Error whilst decompressing data: {}", e);
+    error!("Error whilst decompressing data: {e}");
     DecodeError { kind: DecodeErrorKind::InvalidData }
 }
 

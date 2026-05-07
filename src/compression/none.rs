@@ -4,6 +4,7 @@ use crate::protocol::{DecodeError, EncodeError};
 use super::{Compressor, Decompressor};
 
 /// Noop compression implementation.
+#[derive(Debug)]
 pub struct None;
 
 impl<B: ByteBufMut> Compressor<B> for None {

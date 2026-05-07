@@ -1,6 +1,12 @@
 //! Most types are used internally in encoding/decoding, and are not required by typical use cases
 //! for interacting with the protocol. However, types can be used for decoding partial messages,
 //! or rewriting parts of an encoded message.
+// Cast lints in this module are guarded by explicit size checks. Allow at module level.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::missing_errors_doc)]
 use std::borrow::Borrow;
 use std::cmp;
 use std::collections::BTreeMap;
@@ -38,14 +44,17 @@ pub struct DecodeError {
 
 impl DecodeError {
     /// Returns `true` if this error was caused by insufficient bytes in the buffer.
+    #[must_use] 
     pub fn is_not_enough_bytes(&self) -> bool {
         matches!(self.kind, DecodeErrorKind::NotEnoughBytes)
     }
     /// Returns `true` if this error was caused by an invalid UTF-8 byte sequence.
+    #[must_use] 
     pub fn is_utf8(&self) -> bool {
         matches!(self.kind, DecodeErrorKind::Utf8)
     }
     /// Returns `true` if this error was caused by structurally invalid data.
+    #[must_use] 
     pub fn is_invalid_data(&self) -> bool {
         matches!(self.kind, DecodeErrorKind::InvalidData)
     }
@@ -99,10 +108,12 @@ pub struct EncodeError {
 
 impl EncodeError {
     /// Returns `true` if this error was caused by a value that is too large.
+    #[must_use] 
     pub fn is_too_large(&self) -> bool {
         matches!(self.kind, EncodeErrorKind::TooLarge)
     }
     /// Returns `true` if this error was caused by invalid data.
+    #[must_use] 
     pub fn is_invalid_data(&self) -> bool {
         matches!(self.kind, EncodeErrorKind::InvalidData)
     }
@@ -150,11 +161,13 @@ pub struct VersionRange {
 
 impl VersionRange {
     /// Checks whether the version range contains no versions.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.min > self.max
     }
 
     /// Finds the valid intersection with a provided other version range.
+    #[must_use] 
     pub fn intersect(&self, other: &VersionRange) -> VersionRange {
         VersionRange {
             min: cmp::max(self.min, other.min),
@@ -225,7 +238,7 @@ pub(crate) fn write_unknown_tagged_fields<B: ByteBufMut, R: RangeBounds<i32>>(
     unknown_tagged_fields: &BTreeMap<i32, Vec<u8>>,
 ) -> Result<(), EncodeError> {
     for (&k, v) in unknown_tagged_fields.range(range) {
-        if v.len() > std::u32::MAX as usize {
+        if v.len() > u32::MAX as usize {
             error!("Tagged field is too long to encode ({} bytes)", v.len());
             return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
@@ -241,7 +254,7 @@ pub(crate) fn compute_unknown_tagged_fields_size(
 ) -> Result<usize, EncodeError> {
     let mut total_size = 0;
     for (&k, v) in unknown_tagged_fields {
-        if v.len() > std::u32::MAX as usize {
+        if v.len() > u32::MAX as usize {
             error!("Tagged field is too long to encode ({} bytes)", v.len());
             return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }

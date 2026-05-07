@@ -1,6 +1,5 @@
 //! Utilities for working with the [`bytes`] crate.
 use std::io::Cursor;
-use std::mem::size_of;
 use std::ops::Range;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -192,6 +191,10 @@ pub trait GapType {
 }
 
 /// A gap of type `T`.
+// TypedGap only wraps primitive gap types which implement Debug themselves, but the
+// derive macro requires the T: Debug bound which would cascade to all GapType impls.
+// A manual impl would be over-engineering; allow this item to skip Debug.
+#[allow(missing_debug_implementations)]
 pub struct TypedGap<T> {
     gap: Gap,
     type_: T,
@@ -199,6 +202,7 @@ pub struct TypedGap<T> {
 
 macro_rules! define_gap_types {
     {$($n:ident => $f:ident($t:ty)),*$(,)*} => {
+        #[allow(dead_code)]
         pub(crate) mod gap {
             use super::*;
             $(
@@ -313,7 +317,7 @@ impl<T: ByteBufMut> ByteBufMut for &mut T {
         (**self).offset()
     }
     fn seek(&mut self, offset: usize) {
-        (**self).seek(offset)
+        (**self).seek(offset);
     }
     fn range(&mut self, r: Range<usize>) -> &mut [u8] {
         (**self).range(r)

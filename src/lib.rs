@@ -103,6 +103,10 @@
 //! }
 //! ```
 #![deny(missing_docs)]
+#![deny(warnings)]
+#![warn(clippy::pedantic)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
 
 #[macro_use]
 extern crate log;
@@ -110,6 +114,7 @@ extern crate log;
 pub mod compression;
 pub mod error;
 #[allow(clippy::all)]
+#[allow(clippy::pedantic)]
 pub mod messages;
 pub mod protocol;
 pub mod records;

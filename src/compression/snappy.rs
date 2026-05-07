@@ -1,6 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use log::error;
-use snap::raw::*;
+use snap::raw::{max_compress_len, Encoder, decompress_len, Decoder};
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
 use crate::protocol::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
@@ -9,6 +9,7 @@ use super::{Compressor, Decompressor};
 
 /// Snappy compression algorithm. See [Kafka's broker configuration](https://kafka.apache.org/documentation/#brokerconfigs_compression.type)
 /// for more information.
+#[derive(Debug)]
 pub struct Snappy;
 
 impl<B: ByteBufMut> Compressor<B> for Snappy {
@@ -27,7 +28,7 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
         let actual_len = Encoder::new()
             .compress(&tmp, buf.gap_buf(compress_gap))
             .map_err(|e| {
-                error!("Failed to compress buffer: {}", e);
+                error!("Failed to compress buffer: {e}");
                 EncodeError { kind: EncodeErrorKind::InvalidData }
             })?;
         buf.seek(start_pos + actual_len);
@@ -45,7 +46,7 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
         // Allocate a temporary buffer to hold the uncompressed bytes
         let buf = buf.copy_to_bytes(buf.remaining());
         let actual_len = decompress_len(&buf).map_err(|e| {
-            error!("Failed to decompress buffer: {}", e);
+            error!("Failed to decompress buffer: {e}");
             DecodeError { kind: DecodeErrorKind::InvalidData }
         })?;
         let mut tmp = BytesMut::new();
@@ -53,7 +54,7 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
 
         // Decompress directly from the input buffer
         Decoder::new().decompress(&buf, &mut tmp).map_err(|e| {
-            error!("Failed to decompress buffer: {}", e);
+            error!("Failed to decompress buffer: {e}");
             DecodeError { kind: DecodeErrorKind::InvalidData }
         })?;
 

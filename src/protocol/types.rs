@@ -4,6 +4,18 @@
 //! types that use zigzag encoded to represent length as a "compact" representation.
 //!
 //! It is unnecessary to interact directly with these types for most use cases.
+// Casts in this module are all guarded by explicit range/length checks before the cast site.
+// The `cast_possible_truncation`, `cast_possible_wrap`, `cast_sign_loss`, and `cast_lossless`
+// lints are not actionable here without refactoring the entire encoding/decoding API surface.
+// The `missing_errors_doc` lint would require pure boilerplate docs on every trait impl.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::ref_option)]
+#![allow(clippy::default_trait_access)]
 use std::hash::Hash;
 use std::string::String as StdString;
 
@@ -38,7 +50,7 @@ pub struct Boolean;
 
 impl<T: NewType<bool>> Encoder<&T> for Boolean {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: &T) -> Result<(), EncodeError> {
-        buf.put_u8(if *value.borrow() { 1 } else { 0 });
+        buf.put_u8(u8::from(*value.borrow()));
         Ok(())
     }
     fn compute_size(&self, _value: &T) -> Result<usize, EncodeError> {
@@ -116,9 +128,9 @@ impl<T: NewType<u32>> Encoder<&T> for UnsignedVarInt {
         Ok(match value {
             0x0..=0x7f => 1,
             0x80..=0x3fff => 2,
-            0x4000..=0x1fffff => 3,
-            0x200000..=0xfffffff => 4,
-            0x10000000..=0xffffffff => 5,
+            0x4000..=0x001f_ffff => 3,
+            0x0020_0000..=0x0fff_ffff => 4,
+            0x1000_0000..=0xffff_ffff => 5,
         })
     }
 }
@@ -155,6 +167,7 @@ impl<T: NewType<u64>> Encoder<&T> for UnsignedVarLong {
     }
     fn compute_size(&self, value: &T) -> Result<usize, EncodeError> {
         let value = *value.borrow();
+        #[allow(clippy::unreadable_literal)]
         Ok(match value {
             0x0..=0x7f => 1,
             0x80..=0x3fff => 2,
@@ -272,7 +285,7 @@ pub struct String;
 impl Encoder<Option<&str>> for String {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&str>) -> Result<(), EncodeError> {
         if let Some(s) = value {
-            if s.len() > std::i16::MAX as usize {
+            if s.len() > i16::MAX as usize {
                 error!("String is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -287,7 +300,7 @@ impl Encoder<Option<&str>> for String {
     }
     fn compute_size(&self, value: Option<&str>) -> Result<usize, EncodeError> {
         if let Some(s) = value {
-            if s.len() > std::i16::MAX as usize {
+            if s.len() > i16::MAX as usize {
                 error!("String is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -305,10 +318,10 @@ impl Encoder<Option<&StdString>> for String {
         buf: &mut B,
         value: Option<&StdString>,
     ) -> Result<(), EncodeError> {
-        String.encode(buf, value.map(|s| s.as_str()))
+        String.encode(buf, value.map(std::string::String::as_str))
     }
     fn compute_size(&self, value: Option<&StdString>) -> Result<usize, EncodeError> {
-        String.compute_size(value.map(|s| s.as_str()))
+        String.compute_size(value.map(std::string::String::as_str))
     }
 }
 
@@ -380,7 +393,7 @@ impl Decoder<Option<StdString>> for String {
                 Ok(Some(std::string::String::from_utf8(strbuf)?))
             }
             n => {
-                error!("String length is negative ({})", n);
+                error!("String length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -396,7 +409,7 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
                 Ok(Some(strbuf.into()))
             }
             n => {
-                error!("String length is negative ({})", n);
+                error!("String length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -437,7 +450,7 @@ impl Encoder<Option<&str>> for CompactString {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&str>) -> Result<(), EncodeError> {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
-            if s.len() >= std::u32::MAX as usize {
+            if s.len() >= u32::MAX as usize {
                 error!("CompactString is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -453,7 +466,7 @@ impl Encoder<Option<&str>> for CompactString {
     fn compute_size(&self, value: Option<&str>) -> Result<usize, EncodeError> {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
-            if s.len() >= std::u32::MAX as usize {
+            if s.len() >= u32::MAX as usize {
                 error!("CompactString is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -471,10 +484,10 @@ impl Encoder<Option<&StdString>> for CompactString {
         buf: &mut B,
         value: Option<&StdString>,
     ) -> Result<(), EncodeError> {
-        CompactString.encode(buf, value.map(|s| s.as_str()))
+        CompactString.encode(buf, value.map(std::string::String::as_str))
     }
     fn compute_size(&self, value: Option<&StdString>) -> Result<usize, EncodeError> {
-        CompactString.compute_size(value.map(|s| s.as_str()))
+        CompactString.compute_size(value.map(std::string::String::as_str))
     }
 }
 
@@ -627,10 +640,10 @@ impl Encoder<Option<&Vec<u8>>> for Bytes {
         buf: &mut B,
         value: Option<&Vec<u8>>,
     ) -> Result<(), EncodeError> {
-        Bytes.encode(buf, value.map(|s| s.as_slice()))
+        Bytes.encode(buf, value.map(std::vec::Vec::as_slice))
     }
     fn compute_size(&self, value: Option<&Vec<u8>>) -> Result<usize, EncodeError> {
-        Bytes.compute_size(value.map(|s| s.as_slice()))
+        Bytes.compute_size(value.map(std::vec::Vec::as_slice))
     }
 }
 
@@ -710,7 +723,7 @@ impl Decoder<Option<Vec<u8>>> for Bytes {
                 Ok(Some(data))
             }
             n => {
-                error!("Data length is negative ({})", n);
+                error!("Data length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -723,7 +736,7 @@ impl Decoder<Option<bytes::Bytes>> for Bytes {
             -1 => Ok(None),
             n if n >= 0 => Ok(Some(buf.try_get_bytes(n as usize)?)),
             n => {
-                error!("Data length is negative ({})", n);
+                error!("Data length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -764,7 +777,7 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&[u8]>) -> Result<(), EncodeError> {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
-            if s.len() >= std::u32::MAX as usize {
+            if s.len() >= u32::MAX as usize {
                 error!("CompactBytes is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -780,7 +793,7 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
     fn compute_size(&self, value: Option<&[u8]>) -> Result<usize, EncodeError> {
         if let Some(s) = value {
             // Use >= because we're going to add one to the length
-            if s.len() >= std::u32::MAX as usize {
+            if s.len() >= u32::MAX as usize {
                 error!("CompactBytes is too long to encode ({} bytes)", s.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -798,10 +811,10 @@ impl Encoder<Option<&Vec<u8>>> for CompactBytes {
         buf: &mut B,
         value: Option<&Vec<u8>>,
     ) -> Result<(), EncodeError> {
-        CompactBytes.encode(buf, value.map(|s| s.as_slice()))
+        CompactBytes.encode(buf, value.map(std::vec::Vec::as_slice))
     }
     fn compute_size(&self, value: Option<&Vec<u8>>) -> Result<usize, EncodeError> {
-        CompactBytes.compute_size(value.map(|s| s.as_slice()))
+        CompactBytes.compute_size(value.map(std::vec::Vec::as_slice))
     }
 }
 
@@ -1008,10 +1021,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&Vec<T>>> for Array<E> {
         buf: &mut B,
         value: Option<&Vec<T>>,
     ) -> Result<(), EncodeError> {
-        self.encode(buf, value.map(|s| s.as_slice()))
+        self.encode(buf, value.map(std::vec::Vec::as_slice))
     }
     fn compute_size(&self, value: Option<&Vec<T>>) -> Result<usize, EncodeError> {
-        self.compute_size(value.map(|s| s.as_slice()))
+        self.compute_size(value.map(std::vec::Vec::as_slice))
     }
 }
 
@@ -1130,7 +1143,7 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
                 Ok(Some(result))
             }
             n => {
-                error!("Array length is negative ({})", n);
+                error!("Array length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -1163,7 +1176,7 @@ impl<K: Eq + Hash, V, E: Decoder<(K, V)>> Decoder<Option<IndexMap<K, V>>> for Ar
                 Ok(Some(result))
             }
             n => {
-                error!("Array length is negative ({})", n);
+                error!("Array length is negative ({n})");
                 Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
@@ -1191,7 +1204,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: Option<&[T]>) -> Result<(), EncodeError> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
-            if a.len() >= std::u32::MAX as usize {
+            if a.len() >= u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -1209,7 +1222,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
     fn compute_size(&self, value: Option<&[T]>) -> Result<usize, EncodeError> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
-            if a.len() >= std::u32::MAX as usize {
+            if a.len() >= u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
@@ -1233,10 +1246,10 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&Vec<T>>> for CompactArray<E> 
         buf: &mut B,
         value: Option<&Vec<T>>,
     ) -> Result<(), EncodeError> {
-        self.encode(buf, value.map(|s| s.as_slice()))
+        self.encode(buf, value.map(std::vec::Vec::as_slice))
     }
     fn compute_size(&self, value: Option<&Vec<T>>) -> Result<usize, EncodeError> {
-        self.compute_size(value.map(|s| s.as_slice()))
+        self.compute_size(value.map(std::vec::Vec::as_slice))
     }
 }
 
@@ -1281,7 +1294,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
     ) -> Result<(), EncodeError> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
-            if a.len() >= std::u32::MAX as usize {
+            if a.len() >= u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
@@ -1299,7 +1312,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
     fn compute_size(&self, value: Option<&IndexMap<K, V>>) -> Result<usize, EncodeError> {
         if let Some(a) = value {
             // Use >= because we're going to add one to the length
-            if a.len() >= std::u32::MAX as usize {
+            if a.len() >= u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
                 Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
@@ -1443,12 +1456,12 @@ mod tests {
         test_encoder_decoder(VarLong, 300, &[216, 4]);
         test_encoder_decoder(
             VarLong,
-            std::i64::MAX,
+            i64::MAX,
             &[254, 255, 255, 255, 255, 255, 255, 255, 255, 1],
         );
         test_encoder_decoder(
             VarLong,
-            std::i64::MIN,
+            i64::MIN,
             &[255, 255, 255, 255, 255, 255, 255, 255, 255, 1],
         );
     }
