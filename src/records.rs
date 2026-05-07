@@ -92,6 +92,8 @@ pub const NO_PARTITION_LEADER_EPOCH: i32 = -1;
 pub const NO_SEQUENCE: i32 = -1;
 /// Value to indicate missing timestamp.
 pub const NO_TIMESTAMP: i64 = -1;
+/// Maximum nesting depth for compressed legacy record wrappers.
+const MAX_LEGACY_NESTING: usize = 4;
 
 #[derive(Debug, Clone)]
 /// Batch encoder for Kafka records.
@@ -869,6 +871,20 @@ impl Record {
         version: i8,
         records: &mut Vec<Record>,
     ) -> Result<(), DecodeError> {
+        Self::decode_legacy_inner(buf, version, records, 0)
+    }
+
+    fn decode_legacy_inner<B: ByteBuf>(
+        buf: &mut B,
+        version: i8,
+        records: &mut Vec<Record>,
+        depth: usize,
+    ) -> Result<(), DecodeError> {
+        if depth > MAX_LEGACY_NESTING {
+            error!("Legacy record nesting depth exceeded maximum ({})", MAX_LEGACY_NESTING);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
+        }
+
         let offset = types::Int64.decode(buf)?;
         let size: i32 = types::Int32.decode(buf)?;
         if size < 0 {
@@ -949,7 +965,7 @@ impl Record {
             })?;
 
             while !value.is_empty() {
-                Record::decode_legacy(&mut value, version, records)?;
+                Self::decode_legacy_inner(&mut value, version, records, depth + 1)?;
             }
         }
 
