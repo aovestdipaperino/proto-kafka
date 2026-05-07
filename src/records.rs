@@ -57,7 +57,7 @@ use std::cmp::Ordering;
 pub const IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_CKSUM);
 
 /// The different types of compression supported by Kafka.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Compression {
     /// No compression.
     None = 0,
@@ -72,7 +72,7 @@ pub enum Compression {
 }
 
 /// Indicates the meaning of the timestamp field on a record.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TimestampType {
     /// The timestamp represents when the record was created by the client.
     Creation = 0,
@@ -82,7 +82,7 @@ pub enum TimestampType {
 
 /// Options for encoding and compressing a batch of records. Note, not all compression algorithms
 /// are currently implemented by this library.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordEncodeOptions {
     /// Record version, 0, 1, or 2.
     pub version: i8,
@@ -136,7 +136,7 @@ struct BatchDecodeInfo {
 }
 
 /// A Kafka message containing key, payload value, and all associated metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
     // Batch properties
     /// Whether this record is transactional.
