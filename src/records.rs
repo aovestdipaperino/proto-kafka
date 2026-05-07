@@ -705,6 +705,41 @@ impl Record {
         Ok(())
     }
 
+    /// Encodes a nullable header value using the Kafka record header protocol sentinel `-2` for null.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EncodeError` if the value length exceeds `i32::MAX` or if the varint write fails.
+    fn encode_optional_header_value<B: ByteBufMut>(
+        buf: &mut B,
+        data: Option<&Bytes>,
+    ) -> Result<(), EncodeError> {
+        if let Some(d) = data {
+            if d.len() > i32::MAX as usize {
+                error!("Record header value was too large to encode ({} bytes)", d.len());
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
+            }
+            types::VarInt.encode(buf, d.len() as i32)?;
+            buf.put_slice(d);
+        } else {
+            // Kafka record header protocol uses -2 as the null sentinel for header values.
+            types::VarInt.encode(buf, -2)?;
+        }
+        Ok(())
+    }
+
+    fn compute_optional_header_value_size(data: Option<&Bytes>) -> Result<usize, EncodeError> {
+        if let Some(d) = data {
+            if d.len() > i32::MAX as usize {
+                error!("Record header value was too large to encode ({} bytes)", d.len());
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
+            }
+            Ok(types::VarInt.compute_size(d.len() as i32)? + d.len())
+        } else {
+            Ok(types::VarInt.compute_size(-2)?)
+        }
+    }
+
     fn encode_record_headers<B: ByteBufMut>(
         buf: &mut B,
         headers: &IndexMap<StrBytes, Option<Bytes>>,
@@ -721,7 +756,7 @@ impl Record {
             }
             types::VarInt.encode(buf, k.len() as i32)?;
             buf.put_slice(k.as_ref());
-            Self::encode_optional_bytes(buf, v.as_ref(), "header value")?;
+            Self::encode_optional_header_value(buf, v.as_ref())?;
         }
         Ok(())
     }
@@ -780,7 +815,7 @@ impl Record {
             }
             size += types::VarInt.compute_size(k.len() as i32)?;
             size += k.len();
-            size += Self::compute_optional_bytes_size(v.as_ref(), "header value")?;
+            size += Self::compute_optional_header_value_size(v.as_ref())?;
         }
         Ok(size)
     }
