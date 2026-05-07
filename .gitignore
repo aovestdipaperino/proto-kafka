@@ -4,3 +4,5 @@ Cargo.lock
 /xtask/target
 .idea/
 kafka_repo
+.tokensave
+docs/superpowers/
