@@ -181,14 +181,18 @@ impl RecordBatchEncoder {
         B: ByteBufMut,
         I: Iterator<Item = &'a Record> + Clone,
     {
-        match options.version {
+        debug_assert!((0..=2).contains(&options.version), "version must be 0, 1, or 2");
+        let start_offset = buf.offset();
+        let result = match options.version {
             0..=1 => Self::encode_legacy(buf, records, options),
             2 => Self::encode_new(buf, records, options),
             _ => {
                 error!("Unknown record batch version ({})", options.version);
                 Err(EncodeError { kind: EncodeErrorKind::InvalidData })
             }
-        }
+        };
+        debug_assert!(buf.offset() >= start_offset, "buffer offset must not decrease");
+        result
     }
     fn encode_legacy_records<'a, B, I>(
         buf: &mut B,
@@ -446,10 +450,12 @@ impl RecordBatchEncoder {
 impl RecordBatchDecoder {
     /// Decode the provided buffer into a vec of records.
     pub fn decode<B: ByteBuf>(buf: &mut B) -> Result<Vec<Record>, DecodeError> {
+        debug_assert!(buf.has_remaining(), "buffer must not be empty");
         let mut records = Vec::new();
         while buf.has_remaining() {
             Self::decode_batch(buf, &mut records)?;
         }
+        debug_assert!(!buf.has_remaining(), "all bytes must be consumed after decode");
         Ok(records)
     }
     fn decode_batch<B: ByteBuf>(buf: &mut B, records: &mut Vec<Record>) -> Result<(), DecodeError> {
@@ -600,6 +606,8 @@ impl Record {
         B: ByteBufMut,
         F: FnOnce(&mut B) -> Result<(), EncodeError>,
     {
+        debug_assert!(options.version <= 1, "legacy encoding requires version 0 or 1");
+        let start_offset = buf.offset();
         types::Int64.encode(buf, 0)?;
         let size_gap = buf.put_typed_gap(gap::I32);
         let message_start = buf.offset();
@@ -633,6 +641,7 @@ impl Record {
         let crc = IEEE.checksum(buf.range(content_start..message_end));
         buf.fill_typed_gap(crc_gap, crc);
 
+        debug_assert!(buf.offset() > start_offset, "encoding must produce output");
         Ok(())
     }
     fn encode_legacy<B: ByteBufMut>(

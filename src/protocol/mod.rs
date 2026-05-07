@@ -237,6 +237,7 @@ pub(crate) fn write_unknown_tagged_fields<B: ByteBufMut, R: RangeBounds<i32>>(
     range: R,
     unknown_tagged_fields: &BTreeMap<i32, Vec<u8>>,
 ) -> Result<(), EncodeError> {
+    let start_offset = buf.offset();
     for (&k, v) in unknown_tagged_fields.range(range) {
         if v.len() > u32::MAX as usize {
             error!("Tagged field is too long to encode ({} bytes)", v.len());
@@ -246,6 +247,7 @@ pub(crate) fn write_unknown_tagged_fields<B: ByteBufMut, R: RangeBounds<i32>>(
         types::UnsignedVarInt.encode(buf, v.len() as u32)?;
         buf.put_slice(v.as_slice());
     }
+    debug_assert!(buf.offset() >= start_offset, "buffer offset must not decrease");
     Ok(())
 }
 
@@ -262,6 +264,10 @@ pub(crate) fn compute_unknown_tagged_fields_size(
         total_size += types::UnsignedVarInt.compute_size(v.len() as u32)?;
         total_size += v.len();
     }
+    debug_assert!(
+        total_size == 0 || !unknown_tagged_fields.is_empty(),
+        "non-zero size requires non-empty fields"
+    );
     Ok(total_size)
 }
 
