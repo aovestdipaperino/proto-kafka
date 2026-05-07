@@ -167,6 +167,15 @@ pub struct Record {
     pub headers: IndexMap<StrBytes, Option<Bytes>>,
 }
 
+/// Byte offset of the magic version byte within a record batch.
+///
+/// In the Kafka record batch format, the first 16 bytes contain:
+/// - 8 bytes: base offset (i64)
+/// - 4 bytes: batch length (i32)
+/// - 4 bytes: partition leader epoch (i32)
+///
+/// The magic byte (version indicator) immediately follows at offset 16.
+/// Changing this value will break record batch version detection.
 const MAGIC_BYTE_OFFSET: usize = 16;
 
 impl RecordBatchEncoder {
