@@ -280,3 +280,89 @@ pub trait Builder {
     /// Retrieve the builder for this protocol item.
     fn builder() -> Self::Builder;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_range_empty() {
+        let r = VersionRange { min: 5, max: 3 };
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn version_range_not_empty() {
+        let r = VersionRange { min: 1, max: 5 };
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn version_range_single() {
+        let r = VersionRange { min: 3, max: 3 };
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn version_range_intersect_overlap() {
+        let a = VersionRange { min: 1, max: 5 };
+        let b = VersionRange { min: 3, max: 8 };
+        let c = a.intersect(&b);
+        assert_eq!(c.min, 3);
+        assert_eq!(c.max, 5);
+        assert!(!c.is_empty());
+    }
+
+    #[test]
+    fn version_range_intersect_no_overlap() {
+        let a = VersionRange { min: 1, max: 3 };
+        let b = VersionRange { min: 5, max: 8 };
+        let c = a.intersect(&b);
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn version_range_intersect_subset() {
+        let a = VersionRange { min: 1, max: 10 };
+        let b = VersionRange { min: 3, max: 5 };
+        let c = a.intersect(&b);
+        assert_eq!(c.min, 3);
+        assert_eq!(c.max, 5);
+    }
+
+    #[test]
+    fn decode_error_display() {
+        let err = DecodeError { kind: DecodeErrorKind::NotEnoughBytes };
+        assert!(format!("{err}").contains("not enough bytes"));
+
+        let err = DecodeError { kind: DecodeErrorKind::Utf8 };
+        assert!(format!("{err}").contains("UTF-8"));
+
+        let err = DecodeError { kind: DecodeErrorKind::InvalidData };
+        assert!(format!("{err}").contains("invalid data"));
+    }
+
+    #[test]
+    fn encode_error_display() {
+        let err = EncodeError { kind: EncodeErrorKind::TooLarge };
+        assert!(format!("{err}").contains("too large"));
+
+        let err = EncodeError { kind: EncodeErrorKind::InvalidData };
+        assert!(format!("{err}").contains("invalid data"));
+    }
+
+    #[test]
+    fn decode_error_predicates() {
+        let err = DecodeError { kind: DecodeErrorKind::NotEnoughBytes };
+        assert!(err.is_not_enough_bytes());
+        assert!(!err.is_utf8());
+        assert!(!err.is_invalid_data());
+    }
+
+    #[test]
+    fn encode_error_predicates() {
+        let err = EncodeError { kind: EncodeErrorKind::TooLarge };
+        assert!(err.is_too_large());
+        assert!(!err.is_invalid_data());
+    }
+}
