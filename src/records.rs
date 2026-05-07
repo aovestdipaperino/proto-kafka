@@ -936,12 +936,27 @@ impl Record {
         if compression == Compression::None {
             records.push(Self::build_legacy_record(offset, timestamp, timestamp_type, key, value));
         } else {
-            let mut value = value.ok_or_else(|| {
+            let mut compressed = value.ok_or_else(|| {
                 error!("Received compressed legacy record without a value");
                 DecodeError { kind: DecodeErrorKind::InvalidData }
             })?;
-            while !value.is_empty() {
-                Self::decode_legacy_inner(&mut value, version, records, depth + 1)?;
+            let decompress_and_recurse = |decompressed: &mut Bytes| {
+                while !decompressed.is_empty() {
+                    Self::decode_legacy_inner(decompressed, version, records, depth + 1)?;
+                }
+                Ok(())
+            };
+            match compression {
+                Compression::Gzip => {
+                    cmpr::Gzip::decompress(&mut compressed, decompress_and_recurse)?;
+                }
+                Compression::Snappy => {
+                    cmpr::Snappy::decompress(&mut compressed, decompress_and_recurse)?;
+                }
+                _ => {
+                    error!("Compression algorithm '{compression:?}' is not supported for legacy decoding");
+                    return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
+                }
             }
         }
 
