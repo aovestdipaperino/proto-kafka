@@ -3,17 +3,18 @@ members = ["protocol_codegen"]
 
 [package]
 name = "kafka-protocol"
-version = "0.6.1"
+version = "0.7.0"
 authors = [
     "Diggory Blake <diggsey@googlemail.com>",
     "Jem McElwain <jmcelwain@gmail.com>",
     "belltoy <belltoy@gmail.com>",
+    "Enzo Lombardi <enzinol@gmail.com>",
 ]
 edition = "2018"
 license = "MIT/Apache-2.0"
 description = "Implementation of Kafka wire protocol."
-homepage = "https://github.com/tychedelia/kafka-protocol-rs"
-repository = "https://github.com/tychedelia/kafka-protocol-rs"
+homepage = "https://github.com/aovestdipaperino/proto-kafka"
+repository = "https://github.com/aovestdipaperino/proto-kafka"
 documentation = "https://docs.rs/kafka-protocol"
 readme = "README.md"
 keywords = ["kafka"]
