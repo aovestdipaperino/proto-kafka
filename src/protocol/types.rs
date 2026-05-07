@@ -51,7 +51,7 @@ impl<T: NewType<bool>> Encoder<&T> for Boolean {
 
 impl<T: NewType<bool>> Decoder<T> for Boolean {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T, DecodeError> {
-        Ok((buf.try_get_u8()? != 0).into())
+        Ok((buf.buf_try_get_u8()? != 0).into())
     }
 }
 
@@ -88,13 +88,13 @@ macro_rules! define_simple_ints {
 }
 
 define_simple_ints! {
-    Int8: i8 [put_i8, try_get_i8],
-    Int16: i16 [put_i16, try_get_i16],
-    UInt16: u16 [put_u16, try_get_u16],
-    Int32: i32 [put_i32, try_get_i32],
-    Int64: i64 [put_i64, try_get_i64],
-    UInt32: u32 [put_u32, try_get_u32],
-    Float64: f64 [put_f64, try_get_f64],
+    Int8: i8 [put_i8, buf_try_get_i8],
+    Int16: i16 [put_i16, buf_try_get_i16],
+    UInt16: u16 [put_u16, buf_try_get_u16],
+    Int32: i32 [put_i32, buf_try_get_i32],
+    Int64: i64 [put_i64, buf_try_get_i64],
+    UInt32: u32 [put_u32, buf_try_get_u32],
+    Float64: f64 [put_f64, buf_try_get_f64],
 }
 
 /// An unsigned zigzag encoded int.
@@ -127,7 +127,7 @@ impl<T: NewType<u32>> Decoder<T> for UnsignedVarInt {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T, DecodeError> {
         let mut value = 0;
         for i in 0..5 {
-            let b = buf.try_get_u8()? as u32;
+            let b = buf.buf_try_get_u8()? as u32;
             value |= (b & 0x7F) << (i * 7);
             if b < 0x80 {
                 break;
@@ -174,7 +174,7 @@ impl<T: NewType<u64>> Decoder<T> for UnsignedVarLong {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T, DecodeError> {
         let mut value = 0;
         for i in 0..10 {
-            let b = buf.try_get_u8()? as u64;
+            let b = buf.buf_try_get_u8()? as u64;
             value |= (b & 0x7F) << (i * 7);
             if b < 0x80 {
                 break;
@@ -258,7 +258,7 @@ impl<T: NewType<uuid::Uuid>> Encoder<&T> for Uuid {
 impl<T: NewType<uuid::Uuid>> Decoder<T> for Uuid {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T, DecodeError> {
         let mut result = [0; 16];
-        buf.try_copy_to_slice(&mut result)?;
+        buf.try_copy_to_dst(&mut result)?;
         Ok(uuid::Uuid::from_bytes(result).into())
     }
 }
@@ -376,7 +376,7 @@ impl Decoder<Option<StdString>> for String {
             -1 => Ok(None),
             n if n >= 0 => {
                 let mut strbuf = vec![0; n as usize];
-                buf.try_copy_to_slice(&mut strbuf)?;
+                buf.try_copy_to_dst(&mut strbuf)?;
                 Ok(Some(std::string::String::from_utf8(strbuf)?))
             }
             n => {
@@ -542,7 +542,7 @@ impl Decoder<Option<StdString>> for CompactString {
             0 => Ok(None),
             n => {
                 let mut strbuf = vec![0; (n - 1) as usize];
-                buf.try_copy_to_slice(&mut strbuf)?;
+                buf.try_copy_to_dst(&mut strbuf)?;
                 Ok(Some(std::string::String::from_utf8(strbuf)?))
             }
         }
@@ -706,7 +706,7 @@ impl Decoder<Option<Vec<u8>>> for Bytes {
             -1 => Ok(None),
             n if n >= 0 => {
                 let mut data = vec![0; n as usize];
-                buf.try_copy_to_slice(&mut data)?;
+                buf.try_copy_to_dst(&mut data)?;
                 Ok(Some(data))
             }
             n => {
@@ -877,7 +877,7 @@ impl Decoder<Option<Vec<u8>>> for CompactBytes {
             0 => Ok(None),
             n => {
                 let mut data = vec![0; (n - 1) as usize];
-                buf.try_copy_to_slice(&mut data)?;
+                buf.try_copy_to_dst(&mut data)?;
                 Ok(Some(data))
             }
         }

@@ -45,7 +45,7 @@ pub trait ByteBuf: Buf {
     }
     /// Attempt to copy from buffer into destination slice, returning an error if not enough space
     /// remains.
-    fn try_copy_to_slice(&mut self, dst: &mut [u8]) -> Result<(), NotEnoughBytesError> {
+    fn try_copy_to_dst(&mut self, dst: &mut [u8]) -> Result<(), NotEnoughBytesError> {
         if self.remaining() < dst.len() {
             Err(NotEnoughBytesError)
         } else {
@@ -54,7 +54,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `u8` from the buffer, returning an error if not enough space remains.
-    fn try_get_u8(&mut self) -> Result<u8, NotEnoughBytesError> {
+    fn buf_try_get_u8(&mut self) -> Result<u8, NotEnoughBytesError> {
         if self.remaining() < size_of::<u8>() {
             Err(NotEnoughBytesError)
         } else {
@@ -62,7 +62,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `u16` from the buffer, returning an error if not enough space remains.
-    fn try_get_u16(&mut self) -> Result<u16, NotEnoughBytesError> {
+    fn buf_try_get_u16(&mut self) -> Result<u16, NotEnoughBytesError> {
         if self.remaining() < size_of::<u16>() {
             Err(NotEnoughBytesError)
         } else {
@@ -70,7 +70,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `u32` from the buffer, returning an error if not enough space remains.
-    fn try_get_u32(&mut self) -> Result<u32, NotEnoughBytesError> {
+    fn buf_try_get_u32(&mut self) -> Result<u32, NotEnoughBytesError> {
         if self.remaining() < size_of::<u32>() {
             Err(NotEnoughBytesError)
         } else {
@@ -78,7 +78,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `i8` from the buffer, returning an error if not enough space remains.
-    fn try_get_i8(&mut self) -> Result<i8, NotEnoughBytesError> {
+    fn buf_try_get_i8(&mut self) -> Result<i8, NotEnoughBytesError> {
         if self.remaining() < size_of::<i8>() {
             Err(NotEnoughBytesError)
         } else {
@@ -86,7 +86,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `i16` from the buffer, returning an error if not enough space remains.
-    fn try_get_i16(&mut self) -> Result<i16, NotEnoughBytesError> {
+    fn buf_try_get_i16(&mut self) -> Result<i16, NotEnoughBytesError> {
         if self.remaining() < size_of::<i16>() {
             Err(NotEnoughBytesError)
         } else {
@@ -94,7 +94,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `i32` from the buffer, returning an error if not enough space remains.
-    fn try_get_i32(&mut self) -> Result<i32, NotEnoughBytesError> {
+    fn buf_try_get_i32(&mut self) -> Result<i32, NotEnoughBytesError> {
         if self.remaining() < size_of::<i32>() {
             Err(NotEnoughBytesError)
         } else {
@@ -102,7 +102,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `i64` from the buffer, returning an error if not enough space remains.
-    fn try_get_i64(&mut self) -> Result<i64, NotEnoughBytesError> {
+    fn buf_try_get_i64(&mut self) -> Result<i64, NotEnoughBytesError> {
         if self.remaining() < size_of::<i64>() {
             Err(NotEnoughBytesError)
         } else {
@@ -110,7 +110,7 @@ pub trait ByteBuf: Buf {
         }
     }
     /// Attempt to read a `f32` from the buffer, returning an error if not enough space remains.
-    fn try_get_f64(&mut self) -> Result<f64, NotEnoughBytesError> {
+    fn buf_try_get_f64(&mut self) -> Result<f64, NotEnoughBytesError> {
         if self.remaining() < size_of::<f64>() {
             Err(NotEnoughBytesError)
         } else {
