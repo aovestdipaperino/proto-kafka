@@ -12,7 +12,7 @@ use log::error;
 use uuid::Uuid;
 
 use crate::protocol::{
-    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, DecodeError, Message, HeaderVersion, VersionRange,
+    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, EncodeErrorKind, DecodeError, DecodeErrorKind, Message, HeaderVersion, VersionRange,
     types, write_unknown_tagged_fields, compute_unknown_tagged_fields_size, StrBytes, buf::{ByteBuf, ByteBufMut}, Builder
 };
 
@@ -105,14 +105,14 @@ impl Encodable for CreateDelegationTokenResponse {
             types::CompactString.encode(buf, &self.token_requester_principal_type)?;
         } else {
             if !self.token_requester_principal_type.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 3 {
             types::CompactString.encode(buf, &self.token_requester_principal_name)?;
         } else {
             if !self.token_requester_principal_name.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         types::Int64.encode(buf, &self.issue_timestamp_ms)?;
@@ -133,7 +133,7 @@ impl Encodable for CreateDelegationTokenResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -158,14 +158,14 @@ impl Encodable for CreateDelegationTokenResponse {
             total_size += types::CompactString.compute_size(&self.token_requester_principal_type)?;
         } else {
             if !self.token_requester_principal_type.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 3 {
             total_size += types::CompactString.compute_size(&self.token_requester_principal_name)?;
         } else {
             if !self.token_requester_principal_name.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         total_size += types::Int64.compute_size(&self.issue_timestamp_ms)?;
@@ -186,7 +186,7 @@ impl Encodable for CreateDelegationTokenResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 

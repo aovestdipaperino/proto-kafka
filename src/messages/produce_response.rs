@@ -12,7 +12,7 @@ use log::error;
 use uuid::Uuid;
 
 use crate::protocol::{
-    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, DecodeError, Message, HeaderVersion, VersionRange,
+    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, EncodeErrorKind, DecodeError, DecodeErrorKind, Message, HeaderVersion, VersionRange,
     types, write_unknown_tagged_fields, compute_unknown_tagged_fields_size, StrBytes, buf::{ByteBuf, ByteBufMut}, Builder
 };
 
@@ -49,7 +49,7 @@ impl Encodable for BatchIndexAndErrorMessage {
             types::Int32.encode(buf, &self.batch_index)?;
         } else {
             if self.batch_index != 0 {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 8 {
@@ -60,14 +60,14 @@ impl Encodable for BatchIndexAndErrorMessage {
             }
         } else {
             if !self.batch_index_error_message.is_none() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -81,7 +81,7 @@ impl Encodable for BatchIndexAndErrorMessage {
             total_size += types::Int32.compute_size(&self.batch_index)?;
         } else {
             if self.batch_index != 0 {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 8 {
@@ -92,14 +92,14 @@ impl Encodable for BatchIndexAndErrorMessage {
             }
         } else {
             if !self.batch_index_error_message.is_none() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -238,7 +238,7 @@ impl Encodable for PartitionProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -275,7 +275,7 @@ impl Encodable for PartitionProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -399,7 +399,7 @@ impl MapEncodable for TopicProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -423,7 +423,7 @@ impl MapEncodable for TopicProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -517,7 +517,7 @@ impl Encodable for ProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -539,7 +539,7 @@ impl Encodable for ProduceResponse {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 

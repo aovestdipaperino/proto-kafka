@@ -12,7 +12,7 @@ use log::error;
 use uuid::Uuid;
 
 use crate::protocol::{
-    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, DecodeError, Message, HeaderVersion, VersionRange,
+    Encodable, Decodable, MapEncodable, MapDecodable, Encoder, Decoder, EncodeError, EncodeErrorKind, DecodeError, DecodeErrorKind, Message, HeaderVersion, VersionRange,
     types, write_unknown_tagged_fields, compute_unknown_tagged_fields_size, StrBytes, buf::{ByteBuf, ByteBufMut}, Builder
 };
 
@@ -74,7 +74,7 @@ impl Encodable for FetchPartition {
             types::Int32.encode(buf, &self.last_fetched_epoch)?;
         } else {
             if self.last_fetched_epoch != -1 {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 5 {
@@ -85,7 +85,7 @@ impl Encodable for FetchPartition {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -104,7 +104,7 @@ impl Encodable for FetchPartition {
             total_size += types::Int32.compute_size(&self.last_fetched_epoch)?;
         } else {
             if self.last_fetched_epoch != -1 {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 5 {
@@ -115,7 +115,7 @@ impl Encodable for FetchPartition {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -238,7 +238,7 @@ impl Encodable for FetchTopic {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -267,7 +267,7 @@ impl Encodable for FetchTopic {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -384,14 +384,14 @@ impl Encodable for ForgottenTopic {
             }
         } else {
             if !self.partitions.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
 
@@ -419,14 +419,14 @@ impl Encodable for ForgottenTopic {
             }
         } else {
             if !self.partitions.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
 
@@ -597,7 +597,7 @@ impl Encodable for FetchRequest {
             }
         } else {
             if !self.forgotten_topics_data.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 11 {
@@ -614,14 +614,14 @@ impl Encodable for FetchRequest {
             }
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if !self.cluster_id.is_none() {
                 let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
                 if computed_size > std::u32::MAX as usize {
                     error!("Tagged field is too large to encode ({} bytes)", computed_size);
-                    return Err(EncodeError);
+                    return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
                 }
                 types::UnsignedVarInt.encode(buf, 0)?;
                 types::UnsignedVarInt.encode(buf, computed_size as u32)?;
@@ -662,7 +662,7 @@ impl Encodable for FetchRequest {
             }
         } else {
             if !self.forgotten_topics_data.is_empty() {
-                return Err(EncodeError)
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             }
         }
         if version >= 11 {
@@ -679,14 +679,14 @@ impl Encodable for FetchRequest {
             }
             if num_tagged_fields > std::u32::MAX as usize {
                 error!("Too many tagged fields to encode ({} fields)", num_tagged_fields);
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if !self.cluster_id.is_none() {
                 let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
                 if computed_size > std::u32::MAX as usize {
                     error!("Tagged field is too large to encode ({} bytes)", computed_size);
-                    return Err(EncodeError);
+                    return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
                 }
                 total_size += types::UnsignedVarInt.compute_size(0)?;
                 total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;

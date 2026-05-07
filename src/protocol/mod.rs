@@ -18,14 +18,46 @@ pub mod types;
 /// A string type backed by [`bytes::Bytes`].
 pub type StrBytes = string::String<bytes::Bytes>;
 
+/// The specific kind of decode failure.
+#[derive(Debug)]
+pub(crate) enum DecodeErrorKind {
+    /// The buffer did not contain enough bytes to complete decoding.
+    NotEnoughBytes,
+    /// A byte sequence could not be interpreted as valid UTF-8.
+    Utf8,
+    /// The data was structurally invalid for the expected message format.
+    InvalidData,
+}
+
 /// An error representing any fault while decoding a message, usually when the buffer is incorrectly
 /// sized or otherwise invalid for the decoded message.
 #[derive(Debug)]
-pub struct DecodeError;
+pub struct DecodeError {
+    pub(crate) kind: DecodeErrorKind,
+}
+
+impl DecodeError {
+    /// Returns `true` if this error was caused by insufficient bytes in the buffer.
+    pub fn is_not_enough_bytes(&self) -> bool {
+        matches!(self.kind, DecodeErrorKind::NotEnoughBytes)
+    }
+    /// Returns `true` if this error was caused by an invalid UTF-8 byte sequence.
+    pub fn is_utf8(&self) -> bool {
+        matches!(self.kind, DecodeErrorKind::Utf8)
+    }
+    /// Returns `true` if this error was caused by structurally invalid data.
+    pub fn is_invalid_data(&self) -> bool {
+        matches!(self.kind, DecodeErrorKind::InvalidData)
+    }
+}
 
 impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DecodeError")
+        match self.kind {
+            DecodeErrorKind::NotEnoughBytes => write!(f, "DecodeError: not enough bytes"),
+            DecodeErrorKind::Utf8 => write!(f, "DecodeError: invalid UTF-8"),
+            DecodeErrorKind::InvalidData => write!(f, "DecodeError: invalid data"),
+        }
     }
 }
 
@@ -33,30 +65,55 @@ impl Error for DecodeError {}
 
 impl From<NotEnoughBytesError> for DecodeError {
     fn from(_: NotEnoughBytesError) -> Self {
-        DecodeError
+        DecodeError { kind: DecodeErrorKind::NotEnoughBytes }
     }
 }
 
 impl From<Utf8Error> for DecodeError {
     fn from(_: Utf8Error) -> Self {
-        DecodeError
+        DecodeError { kind: DecodeErrorKind::Utf8 }
     }
 }
 
 impl From<FromUtf8Error> for DecodeError {
     fn from(_: FromUtf8Error) -> Self {
-        DecodeError
+        DecodeError { kind: DecodeErrorKind::Utf8 }
     }
+}
+
+/// The specific kind of encode failure.
+#[derive(Debug)]
+pub(crate) enum EncodeErrorKind {
+    /// The value was too large to be represented in the wire format.
+    TooLarge,
+    /// The data was in an invalid state for encoding.
+    InvalidData,
 }
 
 /// An error representing any fault while encoding a message, usually when a message in an invalid
 /// state is attempted to be encoded.
 #[derive(Debug)]
-pub struct EncodeError;
+pub struct EncodeError {
+    pub(crate) kind: EncodeErrorKind,
+}
+
+impl EncodeError {
+    /// Returns `true` if this error was caused by a value that is too large.
+    pub fn is_too_large(&self) -> bool {
+        matches!(self.kind, EncodeErrorKind::TooLarge)
+    }
+    /// Returns `true` if this error was caused by invalid data.
+    pub fn is_invalid_data(&self) -> bool {
+        matches!(self.kind, EncodeErrorKind::InvalidData)
+    }
+}
 
 impl std::fmt::Display for EncodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "EncodeError")
+        match self.kind {
+            EncodeErrorKind::TooLarge => write!(f, "EncodeError: value too large"),
+            EncodeErrorKind::InvalidData => write!(f, "EncodeError: invalid data"),
+        }
     }
 }
 
@@ -170,7 +227,7 @@ pub(crate) fn write_unknown_tagged_fields<B: ByteBufMut, R: RangeBounds<i32>>(
     for (&k, v) in unknown_tagged_fields.range(range) {
         if v.len() > std::u32::MAX as usize {
             error!("Tagged field is too long to encode ({} bytes)", v.len());
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::UnsignedVarInt.encode(buf, k as u32)?;
         types::UnsignedVarInt.encode(buf, v.len() as u32)?;
@@ -186,7 +243,7 @@ pub(crate) fn compute_unknown_tagged_fields_size(
     for (&k, v) in unknown_tagged_fields {
         if v.len() > std::u32::MAX as usize {
             error!("Tagged field is too long to encode ({} bytes)", v.len());
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         total_size += types::UnsignedVarInt.compute_size(k as u32)?;
         total_size += types::UnsignedVarInt.compute_size(v.len() as u32)?;

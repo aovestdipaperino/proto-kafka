@@ -3,7 +3,7 @@ use log::error;
 use snap::raw::*;
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use crate::protocol::{DecodeError, EncodeError};
+use crate::protocol::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
 
 use super::{Compressor, Decompressor};
 
@@ -28,7 +28,7 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
             .compress(&tmp, buf.gap_buf(compress_gap))
             .map_err(|e| {
                 error!("Failed to compress buffer: {}", e);
-                EncodeError
+                EncodeError { kind: EncodeErrorKind::InvalidData }
             })?;
         buf.seek(start_pos + actual_len);
 
@@ -46,7 +46,7 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
         let buf = buf.copy_to_bytes(buf.remaining());
         let actual_len = decompress_len(&buf).map_err(|e| {
             error!("Failed to decompress buffer: {}", e);
-            DecodeError
+            DecodeError { kind: DecodeErrorKind::InvalidData }
         })?;
         let mut tmp = BytesMut::new();
         tmp.resize(actual_len, 0);
@@ -54,7 +54,7 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
         // Decompress directly from the input buffer
         Decoder::new().decompress(&buf, &mut tmp).map_err(|e| {
             error!("Failed to decompress buffer: {}", e);
-            DecodeError
+            DecodeError { kind: DecodeErrorKind::InvalidData }
         })?;
 
         f(&mut tmp.into())

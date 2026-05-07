@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 use string::TryFrom;
 
 use super::{
-    Decodable, DecodeError, Decoder, Encodable, EncodeError, Encoder, MapDecodable, MapEncodable,
-    NewType, StrBytes,
+    Decodable, DecodeError, DecodeErrorKind, Decoder, Encodable, EncodeError, EncodeErrorKind,
+    Encoder, MapDecodable, MapEncodable, NewType, StrBytes,
 };
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
 
@@ -274,7 +274,7 @@ impl Encoder<Option<&str>> for String {
         if let Some(s) = value {
             if s.len() > std::i16::MAX as usize {
                 error!("String is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Int16.encode(buf, s.len() as i16)?;
                 buf.put_slice(s.as_bytes());
@@ -289,7 +289,7 @@ impl Encoder<Option<&str>> for String {
         if let Some(s) = value {
             if s.len() > std::i16::MAX as usize {
                 error!("String is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Ok(2 + s.len())
             }
@@ -381,7 +381,7 @@ impl Decoder<Option<StdString>> for String {
             }
             n => {
                 error!("String length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -397,7 +397,7 @@ impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
             }
             n => {
                 error!("String length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -408,7 +408,7 @@ impl Decoder<StdString> for String {
         match String.decode(buf) {
             Ok(None) => {
                 error!("String length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -421,7 +421,7 @@ impl<T: NewType<StrBytes>> Decoder<T> for String {
         match String.decode(buf) {
             Ok(None) => {
                 error!("String length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -439,7 +439,7 @@ impl Encoder<Option<&str>> for CompactString {
             // Use >= because we're going to add one to the length
             if s.len() >= std::u32::MAX as usize {
                 error!("CompactString is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
                 buf.put_slice(s.as_bytes());
@@ -455,7 +455,7 @@ impl Encoder<Option<&str>> for CompactString {
             // Use >= because we're going to add one to the length
             if s.len() >= std::u32::MAX as usize {
                 error!("CompactString is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Ok(UnsignedVarInt.compute_size((s.len() as u32) + 1)? + s.len())
             }
@@ -566,7 +566,7 @@ impl Decoder<StdString> for CompactString {
         match CompactString.decode(buf) {
             Ok(None) => {
                 error!("CompactString length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -579,7 +579,7 @@ impl<T: NewType<StrBytes>> Decoder<T> for CompactString {
         match CompactString.decode(buf) {
             Ok(None) => {
                 error!("CompactString length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -596,7 +596,7 @@ impl Encoder<Option<&[u8]>> for Bytes {
         if let Some(s) = value {
             if s.len() > i32::MAX as usize {
                 error!("Data is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Int32.encode(buf, s.len() as i32)?;
                 buf.put_slice(s);
@@ -611,7 +611,7 @@ impl Encoder<Option<&[u8]>> for Bytes {
         if let Some(s) = value {
             if s.len() > i32::MAX as usize {
                 error!("Data is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Ok(4 + s.len())
             }
@@ -711,7 +711,7 @@ impl Decoder<Option<Vec<u8>>> for Bytes {
             }
             n => {
                 error!("Data length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -724,7 +724,7 @@ impl Decoder<Option<bytes::Bytes>> for Bytes {
             n if n >= 0 => Ok(Some(buf.try_get_bytes(n as usize)?)),
             n => {
                 error!("Data length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -735,7 +735,7 @@ impl Decoder<Vec<u8>> for Bytes {
         match Bytes.decode(buf) {
             Ok(None) => {
                 error!("Data length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -748,7 +748,7 @@ impl Decoder<bytes::Bytes> for Bytes {
         match Bytes.decode(buf) {
             Ok(None) => {
                 error!("Data length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -766,7 +766,7 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
             // Use >= because we're going to add one to the length
             if s.len() >= std::u32::MAX as usize {
                 error!("CompactBytes is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 UnsignedVarInt.encode(buf, (s.len() as u32) + 1)?;
                 buf.put_slice(s);
@@ -782,7 +782,7 @@ impl Encoder<Option<&[u8]>> for CompactBytes {
             // Use >= because we're going to add one to the length
             if s.len() >= std::u32::MAX as usize {
                 error!("CompactBytes is too long to encode ({} bytes)", s.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Ok(UnsignedVarInt.compute_size((s.len() as u32) + 1)? + s.len())
             }
@@ -898,7 +898,7 @@ impl Decoder<Vec<u8>> for CompactBytes {
         match CompactBytes.decode(buf) {
             Ok(None) => {
                 error!("Data length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -911,7 +911,7 @@ impl Decoder<bytes::Bytes> for CompactBytes {
         match CompactBytes.decode(buf) {
             Ok(None) => {
                 error!("Data length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -969,7 +969,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for Array<E> {
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
                 error!("Array is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Int32.encode(buf, a.len() as i32)?;
                 for item in a {
@@ -986,7 +986,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for Array<E> {
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
                 error!("Array is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(4 + a.len() * fixed_size)
             } else {
@@ -1057,7 +1057,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
                 error!("Array is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 Int32.encode(buf, a.len() as i32)?;
                 for item in a {
@@ -1074,7 +1074,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
         if let Some(a) = value {
             if a.len() > i32::MAX as usize {
                 error!("Array is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(4 + a.len() * fixed_size)
             } else {
@@ -1131,7 +1131,7 @@ impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
             }
             n => {
                 error!("Array length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -1142,7 +1142,7 @@ impl<T, E: Decoder<T>> Decoder<Vec<T>> for Array<E> {
         match self.decode(buf) {
             Ok(None) => {
                 error!("Array length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -1164,7 +1164,7 @@ impl<K: Eq + Hash, V, E: Decoder<(K, V)>> Decoder<Option<IndexMap<K, V>>> for Ar
             }
             n => {
                 error!("Array length is negative ({})", n);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -1175,7 +1175,7 @@ impl<K: Eq + Hash, V, E: Decoder<(K, V)>> Decoder<IndexMap<K, V>> for Array<E> {
         match self.decode(buf) {
             Ok(None) => {
                 error!("Array length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -1193,7 +1193,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
             // Use >= because we're going to add one to the length
             if a.len() >= std::u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 UnsignedVarInt.encode(buf, (a.len() as u32) + 1)?;
                 for item in a {
@@ -1211,7 +1211,7 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<Option<&[T]>> for CompactArray<E> {
             // Use >= because we're going to add one to the length
             if a.len() >= std::u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(UnsignedVarInt.compute_size((a.len() as u32) + 1)? + a.len() * fixed_size)
             } else {
@@ -1283,7 +1283,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
             // Use >= because we're going to add one to the length
             if a.len() >= std::u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else {
                 UnsignedVarInt.encode(buf, (a.len() as u32) + 1)?;
                 for item in a {
@@ -1301,7 +1301,7 @@ impl<K: Eq + Hash, V, E: for<'a> Encoder<(&'a K, &'a V)>> Encoder<Option<&IndexM
             // Use >= because we're going to add one to the length
             if a.len() >= std::u32::MAX as usize {
                 error!("CompactArray is too long to encode ({} items)", a.len());
-                Err(EncodeError)
+                Err(EncodeError { kind: EncodeErrorKind::TooLarge })
             } else if let Some(fixed_size) = self.0.fixed_size() {
                 Ok(UnsignedVarInt.compute_size((a.len() as u32) + 1)? + a.len() * fixed_size)
             } else {
@@ -1367,7 +1367,7 @@ impl<T, E: Decoder<T>> Decoder<Vec<T>> for CompactArray<E> {
         match self.decode(buf) {
             Ok(None) => {
                 error!("CompactArray length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),
@@ -1396,7 +1396,7 @@ impl<K: Eq + Hash, V, E: Decoder<(K, V)>> Decoder<IndexMap<K, V>> for CompactArr
         match self.decode(buf) {
             Ok(None) => {
                 error!("CompactArray length is negative (-1)");
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
             Ok(Some(s)) => Ok(s),
             Err(e) => Err(e),

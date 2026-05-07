@@ -39,7 +39,7 @@ use string::TryFrom;
 
 use crate::protocol::{
     buf::{gap, ByteBuf, ByteBufMut},
-    types, DecodeError, Decoder, EncodeError, Encoder, StrBytes,
+    types, DecodeError, DecodeErrorKind, Decoder, EncodeError, EncodeErrorKind, Encoder, StrBytes,
 };
 
 use super::compression::{self as cmpr, Compressor, Decompressor};
@@ -233,7 +233,7 @@ impl RecordBatchEncoder {
                         "Record batch was too large to encode ({} bytes)",
                         value_size
                     );
-                    return Err(EncodeError);
+                    return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
                 }
                 buf.fill_typed_gap(size_gap, value_size as i32);
 
@@ -371,7 +371,7 @@ impl RecordBatchEncoder {
                 "Too many records to encode in one batch ({} records)",
                 num_records
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::Int32.encode(buf, num_records as i32)?;
 
@@ -399,7 +399,7 @@ impl RecordBatchEncoder {
                 "Record batch was too large to encode ({} bytes)",
                 batch_size
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
 
         buf.fill_typed_gap(size_gap, batch_size as i32);
@@ -442,7 +442,7 @@ impl RecordBatchDecoder {
             2 => Self::decode_new_batch(buf, version, records),
             _ => {
                 error!("Unknown record batch version ({})", version);
-                Err(DecodeError)
+                Err(DecodeError { kind: DecodeErrorKind::InvalidData })
             }
         }
     }
@@ -470,7 +470,7 @@ impl RecordBatchDecoder {
         let batch_length: i32 = types::Int32.decode(buf)?;
         if batch_length < 0 {
             error!("Unexpected negative batch size: {}", batch_length);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Convert buf to bytes
@@ -483,7 +483,7 @@ impl RecordBatchDecoder {
         let magic: i8 = types::Int8.decode(buf)?;
         if magic != version {
             error!("Version mismatch ({} != {})", magic, version);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // CRC
@@ -495,7 +495,7 @@ impl RecordBatchDecoder {
                 "Cyclic redundancy check failed ({} != {})",
                 supplied_crc, actual_crc
             );
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Attributes
@@ -510,7 +510,7 @@ impl RecordBatchDecoder {
             4 => Compression::Zstd,
             other => {
                 error!("Unknown compression algorithm used: {}", other);
-                return Err(DecodeError);
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
             }
         };
         let timestamp_type = if (attributes & (1 << 3)) != 0 {
@@ -541,7 +541,7 @@ impl RecordBatchDecoder {
         let record_count: i32 = types::Int32.decode(buf)?;
         if record_count < 0 {
             error!("Unexpected negative record count ({})", record_count);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
         let record_count = record_count as usize;
 
@@ -600,7 +600,7 @@ impl Record {
                 "Compression algorithm '{:?}' is unsupported for record version '{}'",
                 options.compression, options.version
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::Int8.encode(buf, compression)?;
 
@@ -612,7 +612,7 @@ impl Record {
         let message_size = message_end - message_start;
         if message_start > i32::MAX as usize {
             error!("Record was too large to encode ({} bytes)", message_size);
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         buf.fill_typed_gap(size_gap, message_size as i32);
 
@@ -628,12 +628,12 @@ impl Record {
     ) -> Result<(), EncodeError> {
         if self.transactional || self.control {
             error!("Transactional and control records are not supported in this version of the protocol!");
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
 
         if !self.headers.is_empty() {
             error!("Record headers are not supported in this version of the protocol!");
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
 
         Self::encode_legacy_static(buf, options, |buf| {
@@ -657,7 +657,7 @@ impl Record {
         let size = self.compute_size_new(min_offset, min_timestamp, options)?;
         if size > i32::MAX as usize {
             error!("Record was too large to encode ({} bytes)", size);
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::VarInt.encode(buf, size as i32)?;
 
@@ -671,7 +671,7 @@ impl Record {
                 "Timestamps within batch are too far apart ({}, {})",
                 min_timestamp, self.timestamp
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::VarInt.encode(buf, timestamp_delta as i32)?;
 
@@ -682,7 +682,7 @@ impl Record {
                 "Timestamps within batch are too far apart ({}, {})",
                 min_offset, self.offset
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::VarInt.encode(buf, offset_delta as i32)?;
 
@@ -690,7 +690,7 @@ impl Record {
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
                 error!("Record key was too large to encode ({} bytes)", k.len());
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
             buf.put_slice(k);
@@ -702,7 +702,7 @@ impl Record {
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
                 error!("Record value was too large to encode ({} bytes)", v.len());
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::VarInt.encode(buf, v.len() as i32)?;
             buf.put_slice(v);
@@ -713,7 +713,7 @@ impl Record {
         // Headers
         if self.headers.len() > i32::MAX as usize {
             error!("Too many record headers encode ({})", self.headers.len());
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         types::VarInt.encode(buf, self.headers.len() as i32)?;
         for (k, v) in &self.headers {
@@ -723,7 +723,7 @@ impl Record {
                     "Record header key was too large to encode ({} bytes)",
                     k.len()
                 );
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             types::VarInt.encode(buf, k.len() as i32)?;
 
@@ -737,7 +737,7 @@ impl Record {
                         "Record header value was too large to encode ({} bytes)",
                         v.len()
                     );
-                    return Err(EncodeError);
+                    return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
                 }
                 types::VarInt.encode(buf, v.len() as i32)?;
                 buf.put_slice(v);
@@ -766,7 +766,7 @@ impl Record {
                 "Timestamps within batch are too far apart ({}, {})",
                 min_timestamp, self.timestamp
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         total_size += types::VarInt.compute_size(timestamp_delta as i32)?;
 
@@ -777,7 +777,7 @@ impl Record {
                 "Timestamps within batch are too far apart ({}, {})",
                 min_offset, self.offset
             );
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         total_size += types::VarInt.compute_size(offset_delta as i32)?;
 
@@ -785,7 +785,7 @@ impl Record {
         if let Some(k) = self.key.as_ref() {
             if k.len() > i32::MAX as usize {
                 error!("Record key was too large to encode ({} bytes)", k.len());
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
             total_size += k.len();
@@ -797,7 +797,7 @@ impl Record {
         if let Some(v) = self.value.as_ref() {
             if v.len() > i32::MAX as usize {
                 error!("Record value was too large to encode ({} bytes)", v.len());
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::VarInt.compute_size(v.len() as i32)?;
             total_size += v.len();
@@ -808,7 +808,7 @@ impl Record {
         // Headers
         if self.headers.len() > i32::MAX as usize {
             error!("Too many record headers encode ({})", self.headers.len());
-            return Err(EncodeError);
+            return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
         }
         total_size += types::VarInt.compute_size(self.headers.len() as i32)?;
         for (k, v) in &self.headers {
@@ -818,7 +818,7 @@ impl Record {
                     "Record header key was too large to encode ({} bytes)",
                     k.len()
                 );
-                return Err(EncodeError);
+                return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
             }
             total_size += types::VarInt.compute_size(k.len() as i32)?;
 
@@ -832,7 +832,7 @@ impl Record {
                         "Record header value was too large to encode ({} bytes)",
                         v.len()
                     );
-                    return Err(EncodeError);
+                    return Err(EncodeError { kind: EncodeErrorKind::TooLarge });
                 }
                 total_size += types::VarInt.compute_size(v.len() as i32)?;
                 total_size += v.len();
@@ -852,7 +852,7 @@ impl Record {
         let size: i32 = types::Int32.decode(buf)?;
         if size < 0 {
             error!("Unexpected negative record size: {}", size);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Ensure we don't over-read
@@ -867,14 +867,14 @@ impl Record {
                 "Cyclic redundancy check failed ({} != {})",
                 supplied_crc, actual_crc
             );
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Magic
         let magic: i8 = types::Int8.decode(buf)?;
         if magic != version {
             error!("Version mismatch ({} != {})", magic, version);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Attributes
@@ -886,7 +886,7 @@ impl Record {
             3 if version > 0 => Compression::Lz4,
             other => {
                 error!("Unknown compression algorithm used: {}", other);
-                return Err(DecodeError);
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
             }
         };
         let timestamp_type = if (attributes & (1 << 3)) != 0 {
@@ -924,7 +924,7 @@ impl Record {
             // Wrapper record around a compressed MessageSet
             let mut value = value.ok_or_else(|| {
                 error!("Received compressed legacy record without a value");
-                DecodeError
+                DecodeError { kind: DecodeErrorKind::InvalidData }
             })?;
 
             while !value.is_empty() {
@@ -943,7 +943,7 @@ impl Record {
         let size: i32 = types::VarInt.decode(buf)?;
         if size < 0 {
             error!("Unexpected negative record size: {}", size);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
 
         // Ensure we don't over-read
@@ -966,7 +966,7 @@ impl Record {
         let key = match key_len.cmp(&-1) {
             Ordering::Less => {
                 error!("Unexpected negative record key length ({} bytes)", key_len);
-                return Err(DecodeError);
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(key_len as usize)?),
@@ -980,7 +980,7 @@ impl Record {
                     "Unexpected negative record value length ({} bytes)",
                     value_len
                 );
-                return Err(DecodeError);
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
             }
             Ordering::Equal => None,
             Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),
@@ -990,7 +990,7 @@ impl Record {
         let num_headers: i32 = types::VarInt.decode(buf)?;
         if num_headers < 0 {
             error!("Unexpected negative record header count: {}", num_headers);
-            return Err(DecodeError);
+            return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
         }
         let num_headers = num_headers as usize;
 
@@ -1003,7 +1003,7 @@ impl Record {
                     "Unexpected negative record header key length ({} bytes)",
                     key_len
                 );
-                return Err(DecodeError);
+                return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
             }
 
             // Key
@@ -1019,7 +1019,7 @@ impl Record {
                         "Unexpected negative record header value length ({} bytes)",
                         value_len
                     );
-                    return Err(DecodeError);
+                    return Err(DecodeError { kind: DecodeErrorKind::InvalidData });
                 }
                 Ordering::Equal => None,
                 Ordering::Greater => Some(buf.try_get_bytes(value_len as usize)?),

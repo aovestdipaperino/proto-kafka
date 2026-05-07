@@ -7,7 +7,7 @@ use flate2::Compression;
 use log::error;
 
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
-use crate::protocol::{DecodeError, EncodeError};
+use crate::protocol::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
 
 use super::{Compressor, Decompressor};
 
@@ -17,12 +17,12 @@ pub struct Gzip;
 
 fn compression_err(e: std::io::Error) -> EncodeError {
     error!("Error whilst compressing data: {}", e);
-    EncodeError
+    EncodeError { kind: EncodeErrorKind::InvalidData }
 }
 
 fn decompression_err(e: std::io::Error) -> DecodeError {
     error!("Error whilst decompressing data: {}", e);
-    DecodeError
+    DecodeError { kind: DecodeErrorKind::InvalidData }
 }
 
 impl<B: ByteBufMut> Compressor<B> for Gzip {
