@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.1
+
+- chore: gitignore `.tokensave/` working directory so the local code-graph
+  database isn't picked up by `cargo package` / `cargo publish` and doesn't
+  show up as untracked in `git status`.
+
 ## 0.19.0
 
 ### Breaking changes
