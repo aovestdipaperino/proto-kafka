@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- **`compression::snappy::decompress` corrupts raw snappy payloads ≥ 16 bytes.** The Xerial magic header probe used `try_get_bytes(16)`, which consumes the bytes from the buffer. If the magic didn't match (raw snappy fallback path), the fallback read from the already-advanced buffer and got truncated data, producing a decompression error. The probe now uses `try_peek_bytes(0..16)` and explicitly consumes the magic bytes only after the match is confirmed. Includes regression test `decompression_fallback_large_payload`. Ported from upstream commit `14d3e104` (PR #149, Steven Le Roux).
+
 ## 0.19.2
 
 ### Improvements
