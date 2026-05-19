@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 0-4
@@ -333,56 +334,26 @@ impl Encodable for ApiVersionsResponse {
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if !self.supported_features.is_empty() {
-                let computed_size = types::CompactArray(types::Struct { version })
-                    .compute_size(&self.supported_features)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 0)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::CompactArray(types::Struct { version })
-                    .encode(buf, &self.supported_features)?;
+                write_tagged_field(
+                    buf,
+                    0,
+                    &self.supported_features,
+                    types::CompactArray(types::Struct { version }),
+                )?;
             }
             if self.finalized_features_epoch != -1 {
-                let computed_size = types::Int64.compute_size(&self.finalized_features_epoch)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 1)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Int64.encode(buf, &self.finalized_features_epoch)?;
+                write_tagged_field(buf, 1, &self.finalized_features_epoch, types::Int64)?;
             }
             if !self.finalized_features.is_empty() {
-                let computed_size = types::CompactArray(types::Struct { version })
-                    .compute_size(&self.finalized_features)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 2)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::CompactArray(types::Struct { version })
-                    .encode(buf, &self.finalized_features)?;
+                write_tagged_field(
+                    buf,
+                    2,
+                    &self.finalized_features,
+                    types::CompactArray(types::Struct { version }),
+                )?;
             }
             if self.zk_migration_ready {
-                let computed_size = types::Boolean.compute_size(&self.zk_migration_ready)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 3)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Boolean.encode(buf, &self.zk_migration_ready)?;
+                write_tagged_field(buf, 3, &self.zk_migration_ready, types::Boolean)?;
             }
 
             write_unknown_tagged_fields(buf, 4.., &self.unknown_tagged_fields)?;
@@ -423,54 +394,26 @@ impl Encodable for ApiVersionsResponse {
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if !self.supported_features.is_empty() {
-                let computed_size = types::CompactArray(types::Struct { version })
-                    .compute_size(&self.supported_features)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(0)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size += compute_size_for_tagged_field(
+                    0,
+                    &self.supported_features,
+                    types::CompactArray(types::Struct { version }),
+                )?;
             }
             if self.finalized_features_epoch != -1 {
-                let computed_size = types::Int64.compute_size(&self.finalized_features_epoch)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(1)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size +=
+                    compute_size_for_tagged_field(1, &self.finalized_features_epoch, types::Int64)?;
             }
             if !self.finalized_features.is_empty() {
-                let computed_size = types::CompactArray(types::Struct { version })
-                    .compute_size(&self.finalized_features)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(2)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size += compute_size_for_tagged_field(
+                    2,
+                    &self.finalized_features,
+                    types::CompactArray(types::Struct { version }),
+                )?;
             }
             if self.zk_migration_ready {
-                let computed_size = types::Boolean.compute_size(&self.zk_migration_ready)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(3)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size +=
+                    compute_size_for_tagged_field(3, &self.zk_migration_ready, types::Boolean)?;
             }
 
             total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;

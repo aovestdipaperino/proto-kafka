@@ -645,75 +645,34 @@ fn write_encode_tag_buffer_inner<W: Write>(
     let is_default = field.default.gen_is_default(var_name, field.optional).not();
     write!(w, "if {is_default} ")?;
     w.block(|w| {
-        write!(w, "let computed_size = ")?;
         if !field.type_.has_compact_form() {
-            write!(
+            emit_tagged_field_call(
                 w,
-                "{}.compute_size({})?",
                 &field.type_.name(false, false),
-                var_name
-            )?;
+                var_name,
+                k,
+                compute_size,
+            )
         } else {
             write_version_cond(
                 w,
                 valid_versions,
                 field.flexible_versions,
                 |w| {
-                    write!(
-                        w,
-                        "{}.compute_size({})?",
-                        &field.type_.name(true, false),
-                        var_name
-                    )?;
-                    Ok(())
-                },
-                |w| {
-                    write!(
-                        w,
-                        "{}.compute_size({})?",
-                        &field.type_.name(false, false),
-                        var_name
-                    )?;
-                    Ok(())
-                },
-                false,
-                false,
-            )?;
-        }
-        writeln!(w, ";")?;
-        write_size_check(w, "computed_size", "u32", "tagged field")?;
-        write_encode_or_compute(w, "types::UnsignedVarInt", k, compute_size)?;
-        writeln!(w)?;
-        write_encode_or_compute(
-            w,
-            "types::UnsignedVarInt",
-            "computed_size as u32",
-            compute_size,
-        )?;
-        writeln!(w)?;
-        if compute_size {
-            writeln!(w, "total_size += computed_size;")?;
-            Ok(())
-        } else if !field.type_.has_compact_form() {
-            write_encode_or_compute(w, &field.type_.name(false, false), var_name, compute_size)
-        } else {
-            write_version_cond(
-                w,
-                valid_versions,
-                field.flexible_versions,
-                |w| {
-                    write_encode_or_compute(
+                    emit_tagged_field_call(
                         w,
                         &field.type_.name(true, false),
                         var_name,
+                        k,
                         compute_size,
                     )
                 },
                 |w| {
-                    write_encode_or_compute(
+                    emit_tagged_field_call(
                         w,
                         &field.type_.name(false, false),
                         var_name,
+                        k,
                         compute_size,
                     )
                 },
@@ -722,6 +681,27 @@ fn write_encode_tag_buffer_inner<W: Write>(
             )
         }
     })
+}
+
+fn emit_tagged_field_call<W: Write, V: Display>(
+    w: &mut CodeWriter<W>,
+    encoder_expr: &str,
+    var_name: V,
+    tag: i32,
+    compute_size: bool,
+) -> Result<(), Error> {
+    if compute_size {
+        write!(
+            w,
+            "total_size += compute_size_for_tagged_field({tag}, {var_name}, {encoder_expr})?;"
+        )?;
+    } else {
+        write!(
+            w,
+            "write_tagged_field(buf, {tag}, {var_name}, {encoder_expr})?;"
+        )?;
+    }
+    Ok(())
 }
 
 fn write_decode_field<W: Write>(
@@ -1352,7 +1332,7 @@ fn write_file_header<W: Write>(w: &mut CodeWriter<W>, name: &str) -> Result<(), 
         w,
         "    Encodable, Decodable, Encoder, Decoder, Message, HeaderVersion, VersionRange,"
     )?;
-    writeln!(w, "    types, write_unknown_tagged_fields, compute_unknown_tagged_fields_size, StrBytes, buf::{{ByteBuf, ByteBufMut}}")?;
+    writeln!(w, "    types, write_unknown_tagged_fields, compute_unknown_tagged_fields_size, write_tagged_field, compute_size_for_tagged_field, StrBytes, buf::{{ByteBuf, ByteBufMut}}")?;
     writeln!(w, "}};")?;
     writeln!(w)?;
     writeln!(w)?;

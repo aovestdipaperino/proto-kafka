@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 0-1
@@ -118,16 +119,7 @@ impl Encodable for FetchSnapshotRequest {
         }
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
         if !self.cluster_id.is_none() {
-            let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
-            if computed_size > std::u32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "tagged field",
-                    size: computed_size,
-                });
-            }
-            types::UnsignedVarInt.encode(buf, 0)?;
-            types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-            types::CompactString.encode(buf, &self.cluster_id)?;
+            write_tagged_field(buf, 0, &self.cluster_id, types::CompactString)?;
         }
 
         write_unknown_tagged_fields(buf, 1.., &self.unknown_tagged_fields)?;
@@ -150,16 +142,7 @@ impl Encodable for FetchSnapshotRequest {
         }
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
         if !self.cluster_id.is_none() {
-            let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
-            if computed_size > std::u32::MAX as usize {
-                return Err(ProtoError::FieldTooLarge {
-                    field: "tagged field",
-                    size: computed_size,
-                });
-            }
-            total_size += types::UnsignedVarInt.compute_size(0)?;
-            total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-            total_size += computed_size;
+            total_size += compute_size_for_tagged_field(0, &self.cluster_id, types::CompactString)?;
         }
 
         total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;
@@ -341,16 +324,7 @@ impl Encodable for PartitionSnapshot {
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
         if version >= 1 {
             if &self.replica_directory_id != &Uuid::nil() {
-                let computed_size = types::Uuid.compute_size(&self.replica_directory_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 0)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Uuid.encode(buf, &self.replica_directory_id)?;
+                write_tagged_field(buf, 0, &self.replica_directory_id, types::Uuid)?;
             }
         }
         write_unknown_tagged_fields(buf, 1.., &self.unknown_tagged_fields)?;
@@ -377,16 +351,8 @@ impl Encodable for PartitionSnapshot {
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
         if version >= 1 {
             if &self.replica_directory_id != &Uuid::nil() {
-                let computed_size = types::Uuid.compute_size(&self.replica_directory_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(0)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size +=
+                    compute_size_for_tagged_field(0, &self.replica_directory_id, types::Uuid)?;
             }
         }
         total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;

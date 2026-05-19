@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 0-1
@@ -151,17 +152,12 @@ impl Encodable for BrokerHeartbeatRequest {
         types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
         if version >= 1 {
             if !self.offline_log_dirs.is_empty() {
-                let computed_size =
-                    types::CompactArray(types::Uuid).compute_size(&self.offline_log_dirs)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 0)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::CompactArray(types::Uuid).encode(buf, &self.offline_log_dirs)?;
+                write_tagged_field(
+                    buf,
+                    0,
+                    &self.offline_log_dirs,
+                    types::CompactArray(types::Uuid),
+                )?;
             }
         }
         write_unknown_tagged_fields(buf, 1.., &self.unknown_tagged_fields)?;
@@ -189,17 +185,11 @@ impl Encodable for BrokerHeartbeatRequest {
         total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
         if version >= 1 {
             if !self.offline_log_dirs.is_empty() {
-                let computed_size =
-                    types::CompactArray(types::Uuid).compute_size(&self.offline_log_dirs)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(0)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size += compute_size_for_tagged_field(
+                    0,
+                    &self.offline_log_dirs,
+                    types::CompactArray(types::Uuid),
+                )?;
             }
         }
         total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;

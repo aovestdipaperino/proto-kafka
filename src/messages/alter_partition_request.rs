@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 2-3

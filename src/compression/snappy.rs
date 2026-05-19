@@ -71,6 +71,55 @@ impl<B: ByteBufMut> Compressor<B> for Snappy {
 
 const MAGIC_HEADER: &[u8; 16] = b"\x82SNAPPY\x00\x00\x00\x00\x01\x00\x00\x00\x01";
 
+fn snappy_err<E>(e: E) -> ProtoError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    ProtoError::Compression {
+        operation: "decompress",
+        codec: "snappy",
+        source: Box::new(e),
+    }
+}
+
+fn try_strip_kafka_magic_header<B: ByteBuf>(compressed: &mut B) -> bool {
+    compressed
+        .try_get_bytes(MAGIC_HEADER.len())
+        .ok()
+        .is_some_and(|magic| *magic == MAGIC_HEADER[..])
+}
+
+fn decompress_raw_fallback<B, R, F>(compressed: &mut B, f: F) -> Result<R>
+where
+    B: ByteBuf,
+    F: FnOnce(&mut Bytes) -> Result<R>,
+{
+    let compressed = compressed.copy_to_bytes(compressed.remaining());
+    let actual_len = decompress_len(&compressed).map_err(snappy_err)?;
+    let mut tmp = BytesMut::zeroed(actual_len);
+    Decoder::new()
+        .decompress(&compressed, &mut tmp)
+        .map_err(snappy_err)?;
+    f(&mut tmp.into())
+}
+
+fn decompress_kafka_chunk<B: ByteBuf>(
+    compressed: &mut B,
+    uncompressed: &mut BytesMut,
+) -> Result<()> {
+    let compressed_block_size = compressed.try_get_u32().map_err(snappy_err)? as usize;
+    let compressed_block = compressed
+        .try_get_bytes(compressed_block_size)
+        .map_err(snappy_err)?;
+    let uncompressed_block_length = decompress_len(&compressed_block).map_err(snappy_err)?;
+    let start = uncompressed.len();
+    uncompressed.resize(start.saturating_add(uncompressed_block_length), 0);
+    Decoder::new()
+        .decompress(&compressed_block, &mut uncompressed[start..])
+        .map_err(snappy_err)?;
+    Ok(())
+}
+
 impl<B: ByteBuf> Decompressor<B> for Snappy {
     type Buf = Bytes;
     fn decompress<R, F>(compressed: &mut B, f: F) -> Result<R>
@@ -81,84 +130,22 @@ impl<B: ByteBuf> Decompressor<B> for Snappy {
             compressed.has_remaining(),
             "compressed input must not be empty"
         );
-        // See https://github.com/xerial/snappy-java?tab=readme-ov-file#compatibility-notes
         if !compressed.has_remaining() {
-            return Err(ProtoError::Compression {
-                operation: "decompress",
-                codec: "snappy",
-                source: Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "expected some bytes in snappy stream",
-                )),
-            });
+            return Err(snappy_err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "expected some bytes in snappy stream",
+            )));
         }
 
-        // We fall back to non-Kafka "raw" snappy compression if the magic header is not present
-        // just like the [Java implementation](https://github.com/xerial/snappy-java/blob/48b31663c8b9d01d758368a26416ef6194045c5f/src/main/java/org/xerial/snappy/SnappyInputStream.java#L114).
-        if compressed
-            .try_get_bytes(MAGIC_HEADER.len())
-            .ok()
-            .is_none_or(|magic| *magic != MAGIC_HEADER[..])
-        {
-            let compressed = compressed.copy_to_bytes(compressed.remaining());
-            let actual_len = decompress_len(&compressed).map_err(|e| ProtoError::Compression {
-                operation: "decompress",
-                codec: "snappy",
-                source: Box::new(e),
-            })?;
-            let mut tmp = BytesMut::zeroed(actual_len);
-            Decoder::new()
-                .decompress(&compressed, &mut tmp)
-                .map_err(|e| ProtoError::Compression {
-                    operation: "decompress",
-                    codec: "snappy",
-                    source: Box::new(e),
-                })?;
-
-            return f(&mut tmp.into());
+        // Fall back to non-Kafka "raw" snappy if the magic header is missing, mirroring the
+        // Java implementation: https://github.com/xerial/snappy-java/blob/48b31663c8b9d01d758368a26416ef6194045c5f/src/main/java/org/xerial/snappy/SnappyInputStream.java#L114
+        if !try_strip_kafka_magic_header(compressed) {
+            return decompress_raw_fallback(compressed, f);
         }
 
         let mut uncompressed = BytesMut::new();
         while compressed.has_remaining() {
-            let compressed_block_size =
-                compressed
-                    .try_get_u32()
-                    .map_err(|e| ProtoError::Compression {
-                        operation: "decompress",
-                        codec: "snappy",
-                        source: Box::new(e),
-                    })? as usize;
-            let compressed_block =
-                compressed
-                    .try_get_bytes(compressed_block_size)
-                    .map_err(|e| ProtoError::Compression {
-                        operation: "decompress",
-                        codec: "snappy",
-                        source: Box::new(e),
-                    })?;
-
-            let uncompressed_block_length =
-                decompress_len(&compressed_block).map_err(|e| ProtoError::Compression {
-                    operation: "decompress",
-                    codec: "snappy",
-                    source: Box::new(e),
-                })?;
-            let uncompressed_block_start = uncompressed.len();
-            uncompressed.resize(
-                uncompressed_block_start.saturating_add(uncompressed_block_length),
-                0,
-            );
-
-            Decoder::new()
-                .decompress(
-                    &compressed_block,
-                    &mut uncompressed[uncompressed_block_start..],
-                )
-                .map_err(|e| ProtoError::Compression {
-                    operation: "decompress",
-                    codec: "snappy",
-                    source: Box::new(e),
-                })?;
+            decompress_kafka_chunk(compressed, &mut uncompressed)?;
         }
 
         debug_assert!(

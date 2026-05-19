@@ -138,7 +138,8 @@ mod str_bytes {
 
 pub use str_bytes::StrBytes;
 
-use crate::messages::{ApiKey, RequestHeader};
+#[doc(hidden)]
+pub use crate::header_io::{decode_request_header_from_buffer, encode_request_header_into_buffer};
 
 pub(crate) trait NewType<Inner>: From<Inner> + Into<Inner> + Borrow<Inner> {}
 
@@ -228,26 +229,6 @@ pub trait Request: Message + Encodable + Decodable + HeaderVersion {
     type Response: Message + Encodable + Decodable + HeaderVersion;
 }
 
-/// Decode the request header from the provided buffer.
-pub fn decode_request_header_from_buffer<B: ByteBuf>(buf: &mut B) -> Result<RequestHeader> {
-    let api_key = ApiKey::try_from(bytes::Buf::get_i16(&mut buf.peek_bytes(0..2)))
-        .map_err(|_| ProtoError::UnknownApiKey)?;
-    let api_version = bytes::Buf::get_i16(&mut buf.peek_bytes(2..4));
-    let header_version = api_key.request_header_version(api_version);
-    RequestHeader::decode(buf, header_version)
-}
-
-/// Encode the request header into the provided buffer.
-pub fn encode_request_header_into_buffer<B: ByteBufMut>(
-    buf: &mut B,
-    header: &RequestHeader,
-) -> Result<()> {
-    let api_key =
-        ApiKey::try_from(header.request_api_key).map_err(|_| ProtoError::UnknownApiKey)?;
-    let version = api_key.request_header_version(header.request_api_version);
-    header.encode(buf, version)
-}
-
 pub(crate) fn write_unknown_tagged_fields<B: ByteBufMut, R: RangeBounds<i32>>(
     buf: &mut B,
     range: R,
@@ -277,4 +258,42 @@ pub(crate) fn compute_unknown_tagged_fields_size(
         total_size += v.len();
     }
     Ok(total_size)
+}
+
+#[inline]
+pub(crate) fn write_tagged_field<B, V, E>(buf: &mut B, tag: u32, value: V, encoder: E) -> Result<()>
+where
+    B: ByteBufMut,
+    E: Encoder<V>,
+    V: Copy,
+{
+    let computed_size = encoder.compute_size(value)?;
+    if computed_size > u32::MAX as usize {
+        return Err(ProtoError::FieldTooLarge {
+            field: "tagged field",
+            size: computed_size,
+        });
+    }
+    types::UnsignedVarInt.encode(buf, tag)?;
+    types::UnsignedVarInt.encode(buf, computed_size as u32)?;
+    encoder.encode(buf, value)?;
+    Ok(())
+}
+
+#[inline]
+pub(crate) fn compute_size_for_tagged_field<V, E>(tag: u32, value: V, encoder: E) -> Result<usize>
+where
+    E: Encoder<V>,
+    V: Copy,
+{
+    let field_size = encoder.compute_size(value)?;
+    if field_size > u32::MAX as usize {
+        return Err(ProtoError::FieldTooLarge {
+            field: "tagged field",
+            size: field_size,
+        });
+    }
+    Ok(types::UnsignedVarInt.compute_size(tag)?
+        + types::UnsignedVarInt.compute_size(field_size as u32)?
+        + field_size)
 }

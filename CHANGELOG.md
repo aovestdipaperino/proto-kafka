@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Code-health refactor** (guided by [tokensave](https://github.com/aovestdipaperino/tokensave) metrics; quality signal lifted from 7327 to 8739 path-filtered to `src/`, acyclicity 0.43 → 1.00):
+  - New top-level `proto_kafka::header_io` module exposes `decode_request_header_from_buffer` and `encode_request_header_into_buffer`. The original paths `proto_kafka::protocol::{decode,encode}_request_header_*` continue to work via a `#[doc(hidden)] pub use` shim. The relocation breaks the previous 167-file circular dependency between `src/protocol/mod.rs` and the generated `src/messages.rs`.
+  - The 10 large per-API dispatch methods in `src/messages.rs` (`RequestKind::encode`, `ResponseKind::decode`, `ApiKey::valid_versions`, `TryFrom<i16> for ApiKey`, etc.) now route through a single `for_each_api!` X-macro instead of inlining 87 match arms each. Each method drops from ~90 lines to ~10.
+  - Per-message tagged-field handling collapsed via two new `#[inline] pub(crate)` helpers in `protocol`: `write_tagged_field` and `compute_size_for_tagged_field`. Reduces ~8 lines per tagged field down to ~3 across all ~170 generated message files.
+- **NASA Power-of-10 Rule 4 (≤60-line functions):**
+  - Decomposed `compression::snappy::decompress` (94 → 27 lines) into `try_strip_kafka_magic_header`, `decompress_raw_fallback`, and `decompress_kafka_chunk` helpers.
+  - Decomposed `records::encode_new_batch` (84 → 25 lines) into `compress_and_write_records` and `backfill_batch_footer` helpers.
+
+### New features
+
+- `Compression::name()` returns the `"none" | "gzip" | "snappy" | "lz4" | "zstd"` codec name (used internally for error messages, available publicly).
+
+### Notes
+
+- `src/messages.rs` shrank by ~1170 lines from the dispatcher and tagged-field refactors. No public API or wire-format changes.
+
 ## 0.19.1
 
 - chore: gitignore `.tokensave/` working directory so the local code-graph

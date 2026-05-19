@@ -128,6 +128,40 @@ pub fn run(messages_module_dir: &str, mut input_file_paths: Vec<PathBuf>) -> Res
         writeln!(m)?;
     }
 
+    // Emit a single X-macro that drives every API-keyed dispatcher in this file.
+    // Each dispatcher below defines a tiny local callback macro and invokes
+    // for_each_api!(callback). Keeping the data list in one place collapses ten
+    // 88-branch match expressions into ~10-line method bodies.
+    writeln!(m, "macro_rules! for_each_api {{")?;
+    writeln!(m, "    ($mac:ident) => {{")?;
+    writeln!(m, "        $mac! {{")?;
+    for (api_key, request_type) in request_types.iter() {
+        let variant = request_type.trim_end_matches("Request");
+        let response_type = response_types
+            .iter()
+            .find(|(k, _)| k == api_key)
+            .map(|(_, v)| v)
+            .expect("Every request type has a response type");
+        let valid_versions = api_key_to_valid_version
+            .get(api_key)
+            .unwrap()
+            .range()
+            .unwrap();
+        writeln!(
+            m,
+            "            ({}, {}, {}, {}, {}),",
+            variant,
+            request_type,
+            response_type,
+            valid_versions.start(),
+            valid_versions.end(),
+        )?;
+    }
+    writeln!(m, "        }}")?;
+    writeln!(m, "    }};")?;
+    writeln!(m, "}}")?;
+    writeln!(m)?;
+
     writeln!(m, "/// Valid API keys in the Kafka protocol.")?;
     writeln!(m, "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]")?;
     writeln!(m, "pub enum ApiKey {{")?;
@@ -143,103 +177,66 @@ pub fn run(messages_module_dir: &str, mut input_file_paths: Vec<PathBuf>) -> Res
     writeln!(m, "}}")?;
     writeln!(m)?;
 
-    writeln!(m, "impl ApiKey {{")?;
     writeln!(
         m,
-        "    /// Get the version of request header that needs to be prepended to this message"
-    )?;
-    writeln!(
-        m,
-        "    pub fn request_header_version(&self, version: i16) -> i16 {{"
-    )?;
-    writeln!(m, "        match self {{")?;
-    for (_api_key, request_type) in request_types.iter() {
-        writeln!(
-            m,
-            "            ApiKey::{} => {}::header_version(version),",
-            request_type.replace("Request", ""),
-            request_type
-        )?;
-    }
-    writeln!(m, "        }}")?;
-    writeln!(m, "    }}")?;
+        r#"impl ApiKey {{
+    /// Get the version of request header that needs to be prepended to this message
+    pub fn request_header_version(&self, version: i16) -> i16 {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ApiKey::$var => $req::header_version(version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "    /// Get the version of response header that needs to be prepended to this message"
-    )?;
-    writeln!(
-        m,
-        "    pub fn response_header_version(&self, version: i16) -> i16 {{"
-    )?;
-    writeln!(m, "        match self {{")?;
-    for (_api_key, response_type) in response_types.iter() {
-        writeln!(
-            m,
-            "            ApiKey::{} => {}::header_version(version),",
-            response_type.replace("Response", ""),
-            response_type
-        )?;
-    }
-    writeln!(m, "        }}")?;
-    writeln!(m, "    }}")?;
+    /// Get the version of response header that needs to be prepended to this message
+    pub fn response_header_version(&self, version: i16) -> i16 {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ApiKey::$var => $resp::header_version(version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "    /// Returns the valid versions that can be used with this ApiKey"
-    )?;
-    writeln!(m, "    pub fn valid_versions(&self) -> VersionRange {{")?;
-    writeln!(m, "        match self {{")?;
-    for (api_key, request_type) in request_types.iter() {
-        let valid_versions = api_key_to_valid_version
-            .get(api_key)
-            .unwrap()
-            .range()
-            .unwrap();
-        writeln!(
-            m,
-            "ApiKey::{} => VersionRange {{ min: {}, max: {} }},",
-            request_type.replace("Request", ""),
-            valid_versions.start(),
-            valid_versions.end(),
-        )?;
-    }
-    writeln!(m, "        }}")?;
-    writeln!(m, "    }}")?;
+    /// Returns the valid versions that can be used with this ApiKey
+    pub fn valid_versions(&self) -> VersionRange {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ApiKey::$var => VersionRange {{ min: $min, max: $max }}, )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        r#"
-  /// Iterate through every ApiKey variant in the order of the internal code.
-  pub fn iter() -> impl Iterator<Item = ApiKey> {{
-    (0..={}).filter_map(|i| ApiKey::try_from(i).ok())
-  }}
-    "#,
+    /// Iterate through every ApiKey variant in the order of the internal code.
+    pub fn iter() -> impl Iterator<Item = ApiKey> {{
+        (0..={}).filter_map(|i| ApiKey::try_from(i).ok())
+    }}
+}}"#,
         request_types.iter().map(|x| x.0).max().unwrap()
     )?;
-
-    writeln!(m, "}}")?;
-
-    writeln!(m, "impl TryFrom<i16> for ApiKey {{")?;
-    writeln!(m, "    type Error = ();")?;
     writeln!(m)?;
+
     writeln!(
         m,
-        "    fn try_from(v: i16) -> std::result::Result<Self, Self::Error> {{"
+        r#"impl TryFrom<i16> for ApiKey {{
+    type Error = ();
+
+    fn try_from(v: i16) -> std::result::Result<Self, Self::Error> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match v {{
+                    $( x if x == ApiKey::$var as i16 => Ok(ApiKey::$var), )*
+                    _ => Err(()),
+                }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
+}}"#
     )?;
-    writeln!(m, "        match v {{")?;
-    for (_, request_type) in request_types.iter() {
-        let key = request_type.replace("Request", "");
-        writeln!(
-            m,
-            "            x if x == ApiKey::{} as i16 => Ok(ApiKey::{}),",
-            key, key
-        )?;
-    }
-    writeln!(m, "            _ => Err(()),")?;
-    writeln!(m, "        }}")?;
-    writeln!(m, "    }}")?;
-    writeln!(m, "}}")?;
     writeln!(m)?;
 
     writeln!(
@@ -262,43 +259,33 @@ pub fn run(messages_module_dir: &str, mut input_file_paths: Vec<PathBuf>) -> Res
     writeln!(m, "}}")?;
     writeln!(m)?;
 
-    writeln!(m, "#[cfg(feature = \"messages_enums\")]")?;
-    writeln!(m, "impl RequestKind {{")?;
-    writeln!(m, "/// Encode the message into the target buffer")?;
-    writeln!(m, "#[cfg(feature = \"client\")]")?;
     writeln!(
         m,
-        "pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {{"
-    )?;
-    writeln!(m, "match self {{")?;
-    for (_, request_type) in request_types.iter() {
-        let variant = request_type.trim_end_matches("Request");
-        writeln!(m, "RequestKind::{variant}(x) => encode(x, bytes, version),")?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
+        r#"#[cfg(feature = "messages_enums")]
+impl RequestKind {{
+    /// Encode the message into the target buffer
+    #[cfg(feature = "client")]
+    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( RequestKind::$var(x) => encode(x, bytes, version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "/// Decode the message from the provided buffer and version"
+    /// Decode the message from the provided buffer and version
+    #[cfg(feature = "broker")]
+    pub fn decode(api_key: ApiKey, bytes: &mut bytes::Bytes, version: i16) -> crate::error::Result<RequestKind> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match api_key {{ $( ApiKey::$var => Ok(RequestKind::$var(decode(bytes, version)?)), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
+}}"#
     )?;
-    writeln!(m, "#[cfg(feature = \"broker\")]")?;
-    writeln!(
-        m,
-        "pub fn decode(api_key: ApiKey, bytes: &mut bytes::Bytes, version: i16) -> crate::error::Result<RequestKind> {{"
-    )?;
-    writeln!(m, "match api_key {{")?;
-    for (_, request_type) in request_types.iter() {
-        let variant = request_type.trim_end_matches("Request");
-        writeln!(
-            m,
-            "ApiKey::{variant} => Ok(RequestKind::{variant}(decode(bytes, version)?)),"
-        )?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
-
-    writeln!(m, "}}")?;
 
     for (_, request_type) in request_types.iter() {
         writeln!(m, "#[cfg(feature = \"messages_enums\")]")?;
@@ -354,81 +341,54 @@ fn encode_into<T: Encodable, B: crate::protocol::buf::ByteBufMut>(encodable: &T,
     writeln!(m, "}}")?;
     writeln!(m)?;
 
-    writeln!(m, "#[cfg(feature = \"messages_enums\")]")?;
-    writeln!(m, "impl ResponseKind {{")?;
-    writeln!(m, "/// Encode the message into the target buffer")?;
-    writeln!(m, "#[cfg(feature = \"broker\")]")?;
     writeln!(
         m,
-        "pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {{"
-    )?;
-    writeln!(m, "match self {{")?;
-    for (_, response_type) in response_types.iter() {
-        let variant = response_type.trim_end_matches("Response");
-        writeln!(
-            m,
-            "ResponseKind::{variant}(x) => encode(x, bytes, version),"
-        )?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
+        r#"#[cfg(feature = "messages_enums")]
+impl ResponseKind {{
+    /// Encode the message into the target buffer
+    #[cfg(feature = "broker")]
+    pub fn encode(&self, bytes: &mut bytes::BytesMut, version: i16) -> crate::error::Result<()> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ResponseKind::$var(x) => encode(x, bytes, version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "/// Decode the message from the provided buffer and version"
-    )?;
-    writeln!(m, "#[cfg(feature = \"client\")]")?;
-    writeln!(
-        m,
-        "pub fn decode(api_key: ApiKey, bytes: &mut bytes::Bytes, version: i16) -> crate::error::Result<ResponseKind> {{"
-    )?;
-    writeln!(m, "match api_key {{")?;
-    for (_, response_type) in response_types.iter() {
-        let variant = response_type.trim_end_matches("Response");
-        writeln!(
-            m,
-            "ApiKey::{variant} => Ok(ResponseKind::{variant}(decode(bytes, version)?)),"
-        )?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
+    /// Decode the message from the provided buffer and version
+    #[cfg(feature = "client")]
+    pub fn decode(api_key: ApiKey, bytes: &mut bytes::Bytes, version: i16) -> crate::error::Result<ResponseKind> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match api_key {{ $( ApiKey::$var => Ok(ResponseKind::$var(decode(bytes, version)?)), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "/// Encode the message into a `ByteBufMut` (e.g. `SegmentedBuf` for zero-copy)."
-    )?;
-    writeln!(m, "#[cfg(feature = \"broker\")]")?;
-    writeln!(
-        m,
-        "pub fn encode_into<B: crate::protocol::buf::ByteBufMut>(&self, buf: &mut B, version: i16) -> crate::error::Result<()> {{"
-    )?;
-    writeln!(m, "match self {{")?;
-    for (_, response_type) in response_types.iter() {
-        let variant = response_type.trim_end_matches("Response");
-        writeln!(
-            m,
-            "ResponseKind::{variant}(x) => encode_into(x, buf, version),"
-        )?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
+    /// Encode the message into a `ByteBufMut` (e.g. `SegmentedBuf` for zero-copy).
+    #[cfg(feature = "broker")]
+    pub fn encode_into<B: crate::protocol::buf::ByteBufMut>(&self, buf: &mut B, version: i16) -> crate::error::Result<()> {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ResponseKind::$var(x) => encode_into(x, buf, version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
 
-    writeln!(
-        m,
-        "/// Get the version of request header that needs to be prepended to this message"
+    /// Get the version of request header that needs to be prepended to this message
+    pub fn header_version(&self, version: i16) -> i16 {{
+        macro_rules! __arm {{
+            ($(($var:ident, $req:ident, $resp:ident, $min:literal, $max:literal)),* $(,)?) => {{
+                match self {{ $( ResponseKind::$var(_) => $resp::header_version(version), )* }}
+            }};
+        }}
+        for_each_api!(__arm)
+    }}
+}}"#
     )?;
-    writeln!(m, "pub fn header_version(&self, version: i16) -> i16 {{")?;
-    writeln!(m, "match self {{")?;
-    for (_, response_type) in response_types.iter() {
-        let variant = response_type.trim_end_matches("Response");
-        writeln!(
-            m,
-            "ResponseKind::{variant}(_) => {response_type}::header_version(version),"
-        )?;
-    }
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
-    writeln!(m, "}}")?;
     writeln!(m)?;
 
     for (_, response_type) in response_types.iter() {

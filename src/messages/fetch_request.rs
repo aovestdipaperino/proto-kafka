@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 4-18
@@ -199,30 +200,12 @@ impl Encodable for FetchPartition {
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if version >= 17 {
                 if &self.replica_directory_id != &Uuid::nil() {
-                    let computed_size = types::Uuid.compute_size(&self.replica_directory_id)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    types::UnsignedVarInt.encode(buf, 0)?;
-                    types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                    types::Uuid.encode(buf, &self.replica_directory_id)?;
+                    write_tagged_field(buf, 0, &self.replica_directory_id, types::Uuid)?;
                 }
             }
             if version >= 18 {
                 if self.high_watermark != 9223372036854775807 {
-                    let computed_size = types::Int64.compute_size(&self.high_watermark)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    types::UnsignedVarInt.encode(buf, 1)?;
-                    types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                    types::Int64.encode(buf, &self.high_watermark)?;
+                    write_tagged_field(buf, 1, &self.high_watermark, types::Int64)?;
                 }
             }
             write_unknown_tagged_fields(buf, 2.., &self.unknown_tagged_fields)?;
@@ -271,30 +254,14 @@ impl Encodable for FetchPartition {
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if version >= 17 {
                 if &self.replica_directory_id != &Uuid::nil() {
-                    let computed_size = types::Uuid.compute_size(&self.replica_directory_id)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    total_size += types::UnsignedVarInt.compute_size(0)?;
-                    total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                    total_size += computed_size;
+                    total_size +=
+                        compute_size_for_tagged_field(0, &self.replica_directory_id, types::Uuid)?;
                 }
             }
             if version >= 18 {
                 if self.high_watermark != 9223372036854775807 {
-                    let computed_size = types::Int64.compute_size(&self.high_watermark)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    total_size += types::UnsignedVarInt.compute_size(1)?;
-                    total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                    total_size += computed_size;
+                    total_size +=
+                        compute_size_for_tagged_field(1, &self.high_watermark, types::Int64)?;
                 }
             }
             total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;
@@ -664,30 +631,11 @@ impl Encodable for FetchRequest {
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if !self.cluster_id.is_none() {
-                let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 0)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::CompactString.encode(buf, &self.cluster_id)?;
+                write_tagged_field(buf, 0, &self.cluster_id, types::CompactString)?;
             }
             if version >= 15 {
                 if &self.replica_state != &Default::default() {
-                    let computed_size =
-                        types::Struct { version }.compute_size(&self.replica_state)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    types::UnsignedVarInt.encode(buf, 1)?;
-                    types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                    types::Struct { version }.encode(buf, &self.replica_state)?;
+                    write_tagged_field(buf, 1, &self.replica_state, types::Struct { version })?;
                 }
             }
             write_unknown_tagged_fields(buf, 2.., &self.unknown_tagged_fields)?;
@@ -763,30 +711,16 @@ impl Encodable for FetchRequest {
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if !self.cluster_id.is_none() {
-                let computed_size = types::CompactString.compute_size(&self.cluster_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(0)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size +=
+                    compute_size_for_tagged_field(0, &self.cluster_id, types::CompactString)?;
             }
             if version >= 15 {
                 if &self.replica_state != &Default::default() {
-                    let computed_size =
-                        types::Struct { version }.compute_size(&self.replica_state)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    total_size += types::UnsignedVarInt.compute_size(1)?;
-                    total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                    total_size += computed_size;
+                    total_size += compute_size_for_tagged_field(
+                        1,
+                        &self.replica_state,
+                        types::Struct { version },
+                    )?;
                 }
             }
             total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;

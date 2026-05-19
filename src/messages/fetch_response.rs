@@ -13,8 +13,9 @@ use uuid::Uuid;
 
 use crate::protocol::{
     buf::{ByteBuf, ByteBufMut},
-    compute_unknown_tagged_fields_size, types, write_unknown_tagged_fields, Decodable, Decoder,
-    Encodable, Encoder, HeaderVersion, Message, StrBytes, VersionRange,
+    compute_size_for_tagged_field, compute_unknown_tagged_fields_size, types, write_tagged_field,
+    write_unknown_tagged_fields, Decodable, Decoder, Encodable, Encoder, HeaderVersion, Message,
+    StrBytes, VersionRange,
 };
 
 /// Valid versions: 4-18
@@ -472,18 +473,12 @@ impl Encodable for FetchResponse {
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if version >= 16 {
                 if !self.node_endpoints.is_empty() {
-                    let computed_size = types::CompactArray(types::Struct { version })
-                        .compute_size(&self.node_endpoints)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    types::UnsignedVarInt.encode(buf, 0)?;
-                    types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                    types::CompactArray(types::Struct { version })
-                        .encode(buf, &self.node_endpoints)?;
+                    write_tagged_field(
+                        buf,
+                        0,
+                        &self.node_endpoints,
+                        types::CompactArray(types::Struct { version }),
+                    )?;
                 }
             }
             write_unknown_tagged_fields(buf, 1.., &self.unknown_tagged_fields)?;
@@ -528,17 +523,11 @@ impl Encodable for FetchResponse {
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if version >= 16 {
                 if !self.node_endpoints.is_empty() {
-                    let computed_size = types::CompactArray(types::Struct { version })
-                        .compute_size(&self.node_endpoints)?;
-                    if computed_size > std::u32::MAX as usize {
-                        return Err(ProtoError::FieldTooLarge {
-                            field: "tagged field",
-                            size: computed_size,
-                        });
-                    }
-                    total_size += types::UnsignedVarInt.compute_size(0)?;
-                    total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                    total_size += computed_size;
+                    total_size += compute_size_for_tagged_field(
+                        0,
+                        &self.node_endpoints,
+                        types::CompactArray(types::Struct { version }),
+                    )?;
                 }
             }
             total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;
@@ -1502,41 +1491,13 @@ impl Encodable for PartitionData {
             }
             types::UnsignedVarInt.encode(buf, num_tagged_fields as u32)?;
             if &self.diverging_epoch != &Default::default() {
-                let computed_size =
-                    types::Struct { version }.compute_size(&self.diverging_epoch)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 0)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Struct { version }.encode(buf, &self.diverging_epoch)?;
+                write_tagged_field(buf, 0, &self.diverging_epoch, types::Struct { version })?;
             }
             if &self.current_leader != &Default::default() {
-                let computed_size = types::Struct { version }.compute_size(&self.current_leader)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 1)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Struct { version }.encode(buf, &self.current_leader)?;
+                write_tagged_field(buf, 1, &self.current_leader, types::Struct { version })?;
             }
             if &self.snapshot_id != &Default::default() {
-                let computed_size = types::Struct { version }.compute_size(&self.snapshot_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                types::UnsignedVarInt.encode(buf, 2)?;
-                types::UnsignedVarInt.encode(buf, computed_size as u32)?;
-                types::Struct { version }.encode(buf, &self.snapshot_id)?;
+                write_tagged_field(buf, 2, &self.snapshot_id, types::Struct { version })?;
             }
 
             write_unknown_tagged_fields(buf, 3.., &self.unknown_tagged_fields)?;
@@ -1593,41 +1554,22 @@ impl Encodable for PartitionData {
             }
             total_size += types::UnsignedVarInt.compute_size(num_tagged_fields as u32)?;
             if &self.diverging_epoch != &Default::default() {
-                let computed_size =
-                    types::Struct { version }.compute_size(&self.diverging_epoch)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(0)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size += compute_size_for_tagged_field(
+                    0,
+                    &self.diverging_epoch,
+                    types::Struct { version },
+                )?;
             }
             if &self.current_leader != &Default::default() {
-                let computed_size = types::Struct { version }.compute_size(&self.current_leader)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(1)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size += compute_size_for_tagged_field(
+                    1,
+                    &self.current_leader,
+                    types::Struct { version },
+                )?;
             }
             if &self.snapshot_id != &Default::default() {
-                let computed_size = types::Struct { version }.compute_size(&self.snapshot_id)?;
-                if computed_size > std::u32::MAX as usize {
-                    return Err(ProtoError::FieldTooLarge {
-                        field: "tagged field",
-                        size: computed_size,
-                    });
-                }
-                total_size += types::UnsignedVarInt.compute_size(2)?;
-                total_size += types::UnsignedVarInt.compute_size(computed_size as u32)?;
-                total_size += computed_size;
+                total_size +=
+                    compute_size_for_tagged_field(2, &self.snapshot_id, types::Struct { version })?;
             }
 
             total_size += compute_unknown_tagged_fields_size(&self.unknown_tagged_fields)?;

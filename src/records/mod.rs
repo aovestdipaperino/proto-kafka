@@ -72,7 +72,6 @@ use crate::protocol::{
 use super::compression::{self as cmpr, Compressor, Decompressor};
 use std::cmp::Ordering;
 
-
 /// IEEE (checksum) cyclic redundancy check.
 pub const IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
@@ -89,6 +88,19 @@ pub enum Compression {
     Lz4 = 3,
     /// Facebook's ZStandard compression library.
     Zstd = 4,
+}
+
+impl Compression {
+    /// The codec name used in error messages and logs.
+    pub fn name(self) -> &'static str {
+        match self {
+            Compression::None => "none",
+            Compression::Gzip => "gzip",
+            Compression::Snappy => "snappy",
+            Compression::Lz4 => "lz4",
+            Compression::Zstd => "zstd",
+        }
+    }
 }
 
 /// Indicates the meaning of the timestamp field on a record.
@@ -415,51 +427,74 @@ impl RecordBatchEncoder {
         let (size_gap, crc_gap, batch_start, content_start) =
             Self::write_batch_header(buf, first_record, &bounds, options)?;
 
-        // Compress and write records
         let records = records.take(bounds.num_records);
-        let min_offset = bounds.min_offset;
-        let min_timestamp = bounds.min_timestamp;
+        Self::compress_and_write_records(
+            buf,
+            records,
+            bounds.min_offset,
+            bounds.min_timestamp,
+            options,
+            compressor,
+        )?;
 
+        Self::backfill_batch_footer(buf, size_gap, crc_gap, batch_start, content_start)
+    }
+
+    fn compress_and_write_records<'a, B, I, CF>(
+        buf: &mut B,
+        records: std::iter::Take<I>,
+        min_offset: i64,
+        min_timestamp: i64,
+        options: &RecordEncodeOptions,
+        compressor: Option<&CF>,
+    ) -> Result<()>
+    where
+        B: ByteBufMut,
+        I: Iterator<Item = &'a Record>,
+        CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
+    {
         if let Some(compressor) = compressor {
             let mut record_buf = BytesMut::new();
             Self::encode_new_records(&mut record_buf, records, min_offset, min_timestamp, options)?;
-            compressor(&mut record_buf, buf, options.compression)?;
-        } else {
-            match options.compression {
-                Compression::None => cmpr::None::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
-                })?,
-                #[cfg(feature = "snappy")]
-                Compression::Snappy => cmpr::Snappy::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
-                })?,
-                #[cfg(feature = "gzip")]
-                Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
-                })?,
-                #[cfg(feature = "lz4")]
-                Compression::Lz4 => cmpr::Lz4::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
-                })?,
-                #[cfg(feature = "zstd")]
-                Compression::Zstd => cmpr::Zstd::compress(buf, |buf| {
-                    Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
-                })?,
-                #[allow(unreachable_patterns)]
-                c => {
-                    let name = match c {
-                        Compression::None => "none",
-                        Compression::Gzip => "gzip",
-                        Compression::Snappy => "snappy",
-                        Compression::Lz4 => "lz4",
-                        Compression::Zstd => "zstd",
-                    };
-                    return Err(ProtoError::CompressionNotEnabled { algorithm: name });
-                }
+            return compressor(&mut record_buf, buf, options.compression);
+        }
+        match options.compression {
+            Compression::None => cmpr::None::compress(buf, |buf| {
+                Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+            })?,
+            #[cfg(feature = "snappy")]
+            Compression::Snappy => cmpr::Snappy::compress(buf, |buf| {
+                Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+            })?,
+            #[cfg(feature = "gzip")]
+            Compression::Gzip => cmpr::Gzip::compress(buf, |buf| {
+                Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+            })?,
+            #[cfg(feature = "lz4")]
+            Compression::Lz4 => cmpr::Lz4::compress(buf, |buf| {
+                Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+            })?,
+            #[cfg(feature = "zstd")]
+            Compression::Zstd => cmpr::Zstd::compress(buf, |buf| {
+                Self::encode_new_records(buf, records, min_offset, min_timestamp, options)
+            })?,
+            #[allow(unreachable_patterns)]
+            c => {
+                return Err(ProtoError::CompressionNotEnabled {
+                    algorithm: c.name(),
+                })
             }
         }
+        Ok(())
+    }
 
-        // Back-fill size and CRC gaps
+    fn backfill_batch_footer<B: ByteBufMut>(
+        buf: &mut B,
+        size_gap: TypedGap<gap::I32>,
+        crc_gap: TypedGap<gap::U32>,
+        batch_start: usize,
+        content_start: usize,
+    ) -> Result<bool> {
         let batch_end = buf.offset();
         debug_assert!(
             batch_end > batch_start,
@@ -473,7 +508,6 @@ impl RecordBatchEncoder {
 
         let crc = crc32c(buf.range(content_start..batch_end));
         buf.fill_typed_gap(crc_gap, crc);
-
         Ok(true)
     }
 
@@ -644,9 +678,7 @@ impl RecordBatchDecoder {
     }
 
     /// Decode the attributes word into compression, timestamp type, and flags.
-    fn decode_attributes(
-        attributes: i16,
-    ) -> Result<(Compression, TimestampType, bool, bool)> {
+    fn decode_attributes(attributes: i16) -> Result<(Compression, TimestampType, bool, bool)> {
         let compression = match attributes & 0x7 {
             0 => Compression::None,
             1 => Compression::Gzip,
@@ -663,17 +695,12 @@ impl RecordBatchDecoder {
         let transactional = (attributes & (1 << 4)) != 0;
         let control = (attributes & (1 << 5)) != 0;
 
-        debug_assert!(
-            compression as u8 <= 4,
-            "compression variant out of range"
-        );
+        debug_assert!(compression as u8 <= 4, "compression variant out of range");
         Ok((compression, timestamp_type, transactional, control))
     }
 
     /// Decode the remaining batch fields after the attributes.
-    fn decode_batch_fields<B: ByteBuf>(
-        buf: &mut B,
-    ) -> Result<(i64, i64, i16, i32, usize)> {
+    fn decode_batch_fields<B: ByteBuf>(buf: &mut B) -> Result<(i64, i64, i16, i32, usize)> {
         let _max_offset_delta: i32 = types::Int32.decode(buf)?;
         let min_timestamp = types::Int64.decode(buf)?;
         let _max_timestamp: i64 = types::Int64.decode(buf)?;
@@ -694,7 +721,13 @@ impl RecordBatchDecoder {
             "record_count ({record_count}) must fit in i32"
         );
 
-        Ok((min_timestamp, producer_id, producer_epoch, base_sequence, record_count))
+        Ok((
+            min_timestamp,
+            producer_id,
+            producer_epoch,
+            base_sequence,
+            record_count,
+        ))
     }
 
     fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
