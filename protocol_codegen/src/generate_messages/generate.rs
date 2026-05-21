@@ -991,6 +991,13 @@ fn prepared_struct_def<W: Write>(
                     ),
                 },
             }
+        } else if nullable_versions.contains(field.versions) {
+            // Kafka convention: a nullable field without an explicit "default" defaults to null.
+            // Without this, the generated `Default::default()` produces `Some(<empty>)` (e.g. Some("")
+            // for nullable strings), which is semantically wrong per the protocol spec and produces
+            // unexpected non-null bytes on the wire — e.g. CreateTopicsResponse v4 ErrorMessage
+            // emitting Int16(0) + 0 bytes instead of Int16(-1).
+            PreparedDefault::Null
         } else {
             type_.default()
         };

@@ -631,11 +631,11 @@ impl Default for CreatableTopicResult {
             name: Default::default(),
             topic_id: Uuid::nil(),
             error_code: 0,
-            error_message: Some(Default::default()),
+            error_message: None,
             topic_config_error_code: 0,
             num_partitions: -1,
             replication_factor: -1,
-            configs: Some(Default::default()),
+            configs: None,
             unknown_tagged_fields: BTreeMap::new(),
         }
     }
