@@ -114,6 +114,9 @@ macro_rules! define_errors {
                 Unknown(i16),
 
                 $(
+                    // $desc is the upstream Kafka error description used verbatim as
+                    // both doc and runtime message; it may contain bare identifiers.
+                    #[allow(clippy::doc_markdown)]
                     #[doc = $desc]
                     [<$kind:camel>],
                 )*

@@ -128,6 +128,9 @@ macro_rules! define_gap_types {
         pub mod gap {
             use super::*;
             $(
+                // The full primitive set is generated for completeness; not all
+                // gap types are constructed today (only I32/U32 are currently used).
+                #[allow(dead_code)]
                 #[derive(Copy, Clone, Debug)]
                 pub(crate) struct $n;
 

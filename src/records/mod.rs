@@ -92,6 +92,7 @@ pub enum Compression {
 
 impl Compression {
     /// The codec name used in error messages and logs.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Compression::None => "none",

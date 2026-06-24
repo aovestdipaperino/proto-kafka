@@ -13,8 +13,8 @@
 //! [`RecordBatchDecoder`]: super::RecordBatchDecoder
 //! [`Record`]: super::Record
 
-use bytes::{BufMut, Bytes, BytesMut};
 use crate::error::{ProtoError, Result};
+use bytes::{BufMut, Bytes, BytesMut};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -441,9 +441,8 @@ fn parse_one_record(
         return None;
     }
 
-    let record_bytes = batch_bytes.slice(
-        RECORD_BATCH_HEADER_SIZE + record_start..RECORD_BATCH_HEADER_SIZE + record_end,
-    );
+    let record_bytes = batch_bytes
+        .slice(RECORD_BATCH_HEADER_SIZE + record_start..RECORD_BATCH_HEADER_SIZE + record_end);
 
     Some((
         RawRecord {
@@ -514,21 +513,26 @@ pub fn rewrite_offset_delta(record_bytes: &Bytes, new_offset_delta: i64) -> Resu
     let data = &record_bytes[..];
 
     // 1. Decode record_length varint
-    let (_raw_len, len_varint_bytes) = decode_varint(data)
-        .ok_or(ProtoError::MalformedRecord { detail: "truncated record_length varint" })?;
+    let (_raw_len, len_varint_bytes) = decode_varint(data).ok_or(ProtoError::MalformedRecord {
+        detail: "truncated record_length varint",
+    })?;
     let body_start = len_varint_bytes;
 
     // 2. Skip attributes (1 byte)
     let mut pos = body_start + 1;
 
     // 3. Skip timestamp_delta varint
-    let (_ts_raw, ts_bytes) = decode_varint(data.get(pos..).unwrap_or_default())
-        .ok_or(ProtoError::MalformedRecord { detail: "truncated timestamp_delta varint" })?;
+    let (_ts_raw, ts_bytes) =
+        decode_varint(data.get(pos..).unwrap_or_default()).ok_or(ProtoError::MalformedRecord {
+            detail: "truncated timestamp_delta varint",
+        })?;
     pos += ts_bytes;
 
     // 4. Decode existing offset_delta varint (so we know how many bytes it occupies)
-    let (_od_raw, od_bytes) = decode_varint(data.get(pos..).unwrap_or_default())
-        .ok_or(ProtoError::MalformedRecord { detail: "truncated offset_delta varint" })?;
+    let (_od_raw, od_bytes) =
+        decode_varint(data.get(pos..).unwrap_or_default()).ok_or(ProtoError::MalformedRecord {
+            detail: "truncated offset_delta varint",
+        })?;
     let od_start = pos;
     let od_end = pos + od_bytes;
 
@@ -1047,8 +1051,7 @@ mod tests {
             &r0,
         );
 
-        let stored_crc =
-            u32::from_be_bytes(batch[CRC_OFFSET..CRC_OFFSET + 4].try_into().unwrap());
+        let stored_crc = u32::from_be_bytes(batch[CRC_OFFSET..CRC_OFFSET + 4].try_into().unwrap());
         let computed_crc = crc32c::crc32c(&batch[CRC_COMPUTE_START..]);
         assert_eq!(stored_crc, computed_crc, "CRC32C mismatch");
     }
@@ -1127,9 +1130,7 @@ mod tests {
         let batch = build_batch(0, 1000, 1000, -1, -1, -1, 0, 1, &r0);
 
         assert!(
-            repack_batch(&batch, 0, |_, _| false)
-                .unwrap()
-                .is_none(),
+            repack_batch(&batch, 0, |_, _| false).unwrap().is_none(),
             "should return None when all records removed"
         );
     }
@@ -1219,9 +1220,15 @@ mod tests {
         let base_sequence = 100_i32;
 
         let batch = build_batch(
-            0, 1000, 1005,
-            producer_id, producer_epoch, base_sequence,
-            0, 2, &record_buf,
+            0,
+            1000,
+            1005,
+            producer_id,
+            producer_epoch,
+            base_sequence,
+            0,
+            2,
+            &record_buf,
         );
 
         // Remove one record — metadata must survive
@@ -1257,7 +1264,8 @@ mod tests {
         assert_eq!(batch_base_offset(&batch), 0, "clients send baseOffset=0");
         assert_eq!(batch_record_count(&batch), 3);
         assert_eq!(
-            batch_last_offset_delta(&batch), 2,
+            batch_last_offset_delta(&batch),
+            2,
             "last_offset_delta must equal record_count - 1"
         );
         assert!(batch_crc_valid(&batch));
@@ -1279,7 +1287,10 @@ mod tests {
         assert!(batch_crc_valid(&batch));
 
         let records = extract_records(&batch, 0);
-        assert!(records.is_empty(), "zero-record batch must yield no records");
+        assert!(
+            records.is_empty(),
+            "zero-record batch must yield no records"
+        );
     }
 
     // -- Nuance: CRC corruption detection ------------------------------------
@@ -1324,7 +1335,8 @@ mod tests {
 
         assert_eq!(batch_record_count(&repacked), 2);
         assert_eq!(
-            batch_last_offset_delta(&repacked), 1,
+            batch_last_offset_delta(&repacked),
+            1,
             "last_offset_delta must be record_count-1 after reindex"
         );
         assert_eq!(batch_base_offset(&repacked), 100, "base_offset from caller");

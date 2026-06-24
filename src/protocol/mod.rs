@@ -261,6 +261,8 @@ pub(crate) fn compute_unknown_tagged_fields_size(
 }
 
 #[inline]
+// Encoders are zero-sized unit structs; passing by value is idiomatic here.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn write_tagged_field<B, V, E>(buf: &mut B, tag: u32, value: V, encoder: E) -> Result<()>
 where
     B: ByteBufMut,
@@ -281,6 +283,8 @@ where
 }
 
 #[inline]
+// Encoders are zero-sized unit structs; passing by value is idiomatic here.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn compute_size_for_tagged_field<V, E>(tag: u32, value: V, encoder: E) -> Result<usize>
 where
     E: Encoder<V>,
