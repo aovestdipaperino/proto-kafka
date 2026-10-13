@@ -6,5 +6,7 @@
 //! The only generated file is `generated_schemas.rs`, which contains data only.
 
 pub mod error;
+pub mod interp;
+pub mod schema;
 pub mod value;
 pub mod wire;
