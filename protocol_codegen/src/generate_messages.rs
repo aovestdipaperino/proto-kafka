@@ -8,8 +8,9 @@ use failure::Error;
 mod code_writer;
 pub mod expr;
 mod generate;
-mod parse;
-mod spec;
+pub mod parse;
+pub mod spec;
+pub mod spec_tables;
 
 use spec::{SpecType, VersionSpec};
 

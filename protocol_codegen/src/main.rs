@@ -66,7 +66,19 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    generate_messages::run(messages_module_dir, input_file_paths)?;
+    input_file_paths.sort();
+    generate_messages::run(messages_module_dir, input_file_paths.clone())?;
+
+    let mut spec_dir = std::fs::canonicalize(std::file!().rsplit_once('/').unwrap().0)?;
+    spec_dir.push("../../spec/src");
+    let specs = input_file_paths
+        .iter()
+        .map(|p| generate_messages::parse::parse(p))
+        .collect::<Result<Vec<_>, _>>()?;
+    fs::write(
+        std::fs::canonicalize(spec_dir)?.join("generated_schemas.rs"),
+        generate_messages::spec_tables::emit(&specs)?,
+    )?;
 
     println!("Running cargo fmt...");
     let mut process = Command::new("cargo")

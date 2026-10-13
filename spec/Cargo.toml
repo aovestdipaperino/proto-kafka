@@ -1,0 +1,16 @@
+[package]
+name = "proto-kafka-spec"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT/Apache-2.0"
+description = "Executable reference spec of the Kafka wire protocol, used only for verifying proto-kafka. Must not depend on proto-kafka."
+
+[dependencies]
+crc32c = "0.6.4"
+crc32fast = "1.4"
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+base64 = "0.22"
+proptest = "1"
