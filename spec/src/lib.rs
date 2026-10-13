@@ -9,6 +9,7 @@ pub mod error;
 pub mod generated_schemas;
 pub mod header;
 pub mod interp;
+pub mod records;
 pub mod schema;
 pub mod value;
 pub mod wire;
