@@ -6,3 +6,4 @@ kafka_repo
 .codegraph
 docs/superpowers/
 .tokensave/
+verification/golden/target/
