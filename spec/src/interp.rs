@@ -4,7 +4,7 @@
 use crate::error::{Result, SpecError, Strict};
 use crate::schema::{DefaultVal, FieldDesc, FieldType, MessageSchema, Prim, StructSchema};
 use crate::value::{StructValue, Value};
-use crate::wire::{LenKind, Reader};
+use crate::wire::{LenKind, Reader, Writer};
 
 pub fn is_tagged(f: &FieldDesc, version: i16) -> bool {
     f.tag.is_some() && f.tagged.contains(version)
@@ -203,4 +203,152 @@ fn read_prim(r: &mut Reader<'_>, p: Prim, name: &'static str, flex: bool, nullab
             }
         }
     })
+}
+
+pub fn encode(schema: &MessageSchema, version: i16, value: &StructValue) -> Result<Vec<u8>> {
+    if !schema.valid.contains(version) {
+        return Err(SpecError::UnsupportedVersion(version));
+    }
+    let mut w = Writer::new();
+    write_struct(&mut w, schema.root, version, schema.flexible.contains(version), value)?;
+    Ok(w.into_bytes())
+}
+
+fn shape(msg: String) -> SpecError {
+    SpecError::Shape(msg)
+}
+
+fn write_struct(w: &mut Writer, s: &StructSchema, version: i16, flexible: bool, v: &StructValue) -> Result<()> {
+    let present: Vec<&FieldDesc> = s.fields.iter().filter(|f| f.versions.contains(version)).collect();
+    if present.len() != v.fields.len() || present.iter().zip(&v.fields).any(|(f, (n, _))| f.name != *n) {
+        return Err(shape(format!("{}: fields do not match schema for v{version}", s.name)));
+    }
+    for (f, (_, val)) in present.iter().zip(&v.fields) {
+        if !is_tagged(f, version) {
+            write_field(w, f, version, flexible, val)?;
+        }
+    }
+    if !flexible {
+        if !v.unknown_tags.is_empty() {
+            return Err(shape(format!("{}: tagged fields in a non-flexible version", s.name)));
+        }
+        return Ok(());
+    }
+    let mut entries: Vec<(u32, Vec<u8>)> = Vec::new();
+    for (f, (_, val)) in present.iter().zip(&v.fields) {
+        if is_tagged(f, version) && *val != default_value(f, version) {
+            let mut sub = Writer::new();
+            write_field(&mut sub, f, version, flexible, val)?;
+            entries.push((f.tag.expect("tagged field has a tag"), sub.into_bytes()));
+        }
+    }
+    entries.extend(v.unknown_tags.iter().cloned());
+    entries.sort_by_key(|(t, _)| *t);
+    if entries.windows(2).any(|p| p[0].0 == p[1].0) {
+        return Err(shape(format!("{}: duplicate tag", s.name)));
+    }
+    w.uvarint(entries.len() as u32);
+    for (tag, bytes) in entries {
+        w.uvarint(tag);
+        w.uvarint(bytes.len() as u32);
+        w.bytes(&bytes);
+    }
+    Ok(())
+}
+
+fn null_err(name: &str) -> SpecError {
+    shape(format!("{name}: null in a non-nullable field"))
+}
+
+fn write_field(w: &mut Writer, f: &FieldDesc, version: i16, msg_flexible: bool, val: &Value) -> Result<()> {
+    let flex = field_flexible(f, version, msg_flexible);
+    let nullable = f.nullable.contains(version);
+    match (f.ty, val) {
+        (FieldType::Prim(p), v) => write_prim(w, p, f.name, flex, nullable, v),
+        (FieldType::Struct(s), Value::Struct(sv)) => match (nullable, sv) {
+            (true, None) => {
+                w.i8(-1);
+                Ok(())
+            }
+            (true, Some(sv)) => {
+                w.i8(1);
+                write_struct(w, s, version, msg_flexible, sv)
+            }
+            (false, Some(sv)) => write_struct(w, s, version, msg_flexible, sv),
+            (false, None) => Err(null_err(f.name)),
+        },
+        (FieldType::PrimArray(p), Value::Array(items)) => {
+            write_array(w, f.name, flex, nullable, items.as_deref(), |w, e| write_prim(w, p, f.name, flex, false, e))
+        }
+        (FieldType::StructArray(s), Value::Array(items)) => {
+            write_array(w, f.name, flex, nullable, items.as_deref(), |w, e| match e {
+                Value::Struct(Some(sv)) => write_struct(w, s, version, msg_flexible, sv),
+                _ => Err(shape(format!("{}: array element is not a struct", f.name))),
+            })
+        }
+        _ => Err(shape(format!("{}: value does not match field type", f.name))),
+    }
+}
+
+fn write_array(
+    w: &mut Writer,
+    name: &str,
+    flex: bool,
+    nullable: bool,
+    items: Option<&[Value]>,
+    mut elem: impl FnMut(&mut Writer, &Value) -> Result<()>,
+) -> Result<()> {
+    let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+    match items {
+        None if !nullable => Err(null_err(name)),
+        None => {
+            w.len_prefix(kind, None);
+            Ok(())
+        }
+        Some(items) => {
+            w.len_prefix(kind, Some(items.len()));
+            items.iter().try_for_each(|e| elem(w, e))
+        }
+    }
+}
+
+fn write_opt_bytes(w: &mut Writer, kind: LenKind, name: &str, nullable: bool, b: Option<&[u8]>) -> Result<()> {
+    match b {
+        None if !nullable => Err(null_err(name)),
+        None => {
+            w.len_prefix(kind, None);
+            Ok(())
+        }
+        Some(b) => {
+            w.len_prefix(kind, Some(b.len()));
+            w.bytes(b);
+            Ok(())
+        }
+    }
+}
+
+fn write_prim(w: &mut Writer, p: Prim, name: &str, flex: bool, nullable: bool, v: &Value) -> Result<()> {
+    match (p, v) {
+        (Prim::Bool, Value::Bool(b)) => w.u8(u8::from(*b)),
+        (Prim::Int8, Value::I8(x)) => w.i8(*x),
+        (Prim::Int16, Value::I16(x)) => w.i16(*x),
+        (Prim::Uint16, Value::U16(x)) => w.u16(*x),
+        (Prim::Int32, Value::I32(x)) => w.i32(*x),
+        (Prim::Int64, Value::I64(x)) => w.i64(*x),
+        (Prim::Float64, Value::F64(bits)) => w.u64(*bits),
+        (Prim::Uuid, Value::Uuid(u)) => w.bytes(u),
+        (Prim::String, Value::Str(s)) => {
+            if s.as_ref().is_some_and(|b| b.len() > 0x7fff) {
+                return Err(SpecError::StringTooLong("<encode>"));
+            }
+            let kind = if flex { LenKind::Compact } else { LenKind::Int16 };
+            write_opt_bytes(w, kind, name, nullable, s.as_deref())?;
+        }
+        (Prim::Bytes, Value::Bytes(b)) | (Prim::Records, Value::Records(b)) => {
+            let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+            write_opt_bytes(w, kind, name, nullable, b.as_deref())?;
+        }
+        _ => return Err(shape(format!("{name}: value does not match {p:?}"))),
+    }
+    Ok(())
 }
