@@ -116,7 +116,49 @@ Deliberately stricter cases so far:
 | S3 | Tagged fields duplicated or out of order | accepted (last wins) | reject |
 | S4 | Known tagged field whose value length ≠ declared `size` | accepted (size ignored) | reject |
 | S5 | 5th varint byte with bits 4–6 set (or 10th varlong byte > 0x01) | bits dropped | reject |
-| S6 | Record batch magic byte other than 0/1/2 (magic is not covered by the v2 CRC) | treated as v2, accepted | reject |
+| ~~S6~~ | Record batch magic byte other than 0/1/2 | **retracted**: Java's wire path rejects it (see Phase 1 results) | reject (not Strict) |
+
+## Phase 1 results (golden conformance)
+
+Golden vectors from kafka-clients 4.1.0 (`verification/golden/vectors/`, `wc -l`):
+`messages.jsonl` 11,760 (588 default, 1,764 random, 2,869 mutated that Java accepts,
+6,539 mutated that Java rejects), `headers.jsonl` 292, `records.jsonl` 266 (38 valid,
+97 mutated that Java accepts, 131 mutated that Java rejects). Total 12,318.
+
+Strict rejections (spec rejects, Java accepts) in the final run, all on mutated vectors:
+
+- messages: `{"S1NegativeLength": 45, "S2InvalidUtf8": 439, "S3TagOrder": 1, "S4TagSize": 6}`
+- records: `{}`
+
+No S5 case occurs in the vectors. S5 is covered by the unit tests in `spec/tests/wire.rs`.
+
+Spec bugs found and fixed:
+
+- **G1. Invalid magic in a truncated final record batch.** Java's wire path
+  (`MemoryRecords.batches()` -> `ByteBufferLogInputStream.nextBatchSize`,
+  `clients/.../common/record/ByteBufferLogInputStream.java:66-86`) reads the size, throws
+  if it is below `RECORD_OVERHEAD_V0`, returns null if fewer than `HEADER_SIZE_UP_TO_MAGIC`
+  (17) bytes remain, and then throws `CorruptRecordException("Invalid magic found in
+  record: N")` for magic < 0 or > 2 (line 84). All of that happens **before** `nextBatch`
+  checks that the whole batch is present. The spec returned such a batch as a
+  `truncated_tail`. 5 golden vectors (magic 44, 4, 17, -1, 75). Fix: `records::decode`
+  checks the magic as soon as byte 16 is present. Regression test:
+  `spec/tests/records.rs::invalid_magic_in_truncated_tail_is_rejected_like_java`.
+  **verified** (golden vectors plus source).
+- **S6 retracted.** The same check means Java rejects an unknown magic on complete
+  batches too, so S6 ("treated as v2, accepted") was wrong for bytes read off the wire.
+  Only the broker's on-disk reader (`FileLogInputStream.java:83-89`) routes magic >= 2 to
+  `DefaultFileChannelRecordBatch` without that check. The spec now rejects unknown magic
+  with `SpecError::Records`, and `Strict::S6UnknownMagic` was removed. Test:
+  `spec/tests/records.rs::unknown_magic_is_rejected_like_java`. **verified**
+
+No message-interpreter (`interp`/`wire`) bug was found: every default, random and
+Java-accepted mutated message vector decodes to Java's value and consumed length, and every
+default and random vector re-encodes byte-for-byte. Header versions match Java for all 292
+request API versions.
+
+Final status: `golden_headers`, `golden_messages` (including
+`golden_covers_every_message_version`) and `golden_records` pass.
 
 ## Environment
 
