@@ -26,9 +26,19 @@ S6 was retracted in Task 7. Java's wire path (`MemoryRecords.batches()` ->
 broker's on-disk reader (`FileLogInputStream.java:83-89`) treats magic >= 2 as v2. The
 number stays reserved so S1-S5 keep their names.
 
-Strict-rejection counts from the last golden run:
+Strict-rejection counts from the last golden run (asserted exactly by the golden tests):
 `checked 11760 message vectors; strict rejections where Java accepts: {"S1NegativeLength": 45, "S2InvalidUtf8": 439, "S3TagOrder": 1, "S4TagSize": 6}`
-and `checked 266 record vectors; strict rejections where Java accepts: {}`
+and `checked 494 record vectors {"mutated": 228, "mutated_crc_fixed": 228, "valid": 38}; strict rejections where Java accepts: {"S1NegativeLength": 8, "S2InvalidUtf8": 2}; opaque compressed accepted where Java rejects: 1`
+
+## Spec more lenient than Java (documented exception)
+
+| # | Input | Java | Spec |
+|---|---|---|---|
+| C1 | Compressed payloads: v2 batch with codec 1-4 and count > 0; legacy wrapper with codec 1-3 | decompresses and parses inner records; rejects corrupt contents | opaque (`Payload::Compressed` / wrapper value kept as is); contents not validated |
+
+C1 is a design non-goal (Phase 1 does not model compression). It is the only case where the
+spec accepts what Java rejects. The golden records test counts these separately (1 vector:
+codec 4 with a garbage payload, "Failed to decompress record stream").
 
 ## Spec bugs found by the golden vectors (fixed)
 
@@ -49,8 +59,33 @@ and `checked 266 record vectors; strict rejections where Java accepts: {}`
 
 - Golden messages never set records fields to non-empty values (Java's JsonConverter is
   lossy for records). Record contents are covered by `records.jsonl`.
-- Golden records contain no compressed batches and no LOG_APPEND_TIME batches.
+- Golden records contain no valid compressed batches and no LOG_APPEND_TIME batches.
+- Record mutations come in two kinds: `mutated` (CRC left broken, so Java mostly stops at
+  `ensureValid()`) and `mutated_crc_fixed` (CRCs re-stamped, so Java reaches
+  `DefaultRecord.readFrom` and legacy key/value parsing). Neither produced a
+  "records still remaining" case; that path is covered by unit tests only.
 - Random messages never set nullable fields to null. Null coverage comes from schema
   defaults (109 `"default": "null"` fields) and from mutations.
-- Mutated vectors that Java accepts (2,869 messages, 97 record sets) are compared on value
-  and consumed length but not re-encoded, since a mutation need not be canonical.
+- Mutated vectors that Java accepts (2,869 messages, 242 record sets) are compared with Java
+  through the `JavaLenient` decode (and the strict decode must equal it or be a `Strict`
+  rejection), but not re-encoded, since a mutation need not be canonical.
+- The 9 `Kind::Data` schemas (ConsumerProtocolAssignment, ConsumerProtocolSubscription,
+  DefaultPrincipalData, EndTxnMarker, KRaftVersionRecord, LeaderChangeMessage,
+  SnapshotFooterRecord, SnapshotHeaderRecord, VotersRecord) have no golden vectors; they are
+  only exercised through the schema tables (`spec/tests/generated.rs`).
+- The encode path for unknown tagged fields is not golden-checked: Java-generated valid
+  vectors never contain unknown tags, so no vector with unknown tags is re-encoded.
+- Tagged-field defaults are compared with `Value` equality, which compares float64 bitwise;
+  Java's write rule compares a primitive `double` with `!=` (`FieldSpec.java:638-639`, so `-0.0 == 0.0` and `NaN != NaN`). Latent only:
+  no 4.1.0 schema has a tagged float64 field (the two float64 fields are untagged).
+- Tagged nullable struct fields are not supported (Java reads a varint presence marker); the
+  schema-table emitter refuses them and none exist in 4.1.0.
+
+## Tooling notes
+
+- CI (`.github/workflows/build-and-test.yml`) runs `cargo test --workspace`, so the spec's
+  tests run, but its clippy job (`cargo hack ... clippy` at the root package) and its fmt job
+  (`protocol_codegen` only) do not cover `spec/`. Run
+  `cargo clippy -p proto-kafka-spec --all-targets --locked -- -D warnings` and
+  `cargo fmt -p proto-kafka-spec --check` locally. Adding them to CI is scheduled for Phase 5;
+  the workflows are not changed in Phase 1.

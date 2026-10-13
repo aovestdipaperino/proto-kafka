@@ -155,15 +155,46 @@ tests: `java_lenient_*` in `spec/tests/{wire,interp_decode,records}.rs`. **verif
 
 Golden vectors from kafka-clients 4.1.0 (`verification/golden/vectors/`, `wc -l`):
 `messages.jsonl` 11,760 (588 default, 1,764 random, 2,869 mutated that Java accepts,
-6,539 mutated that Java rejects), `headers.jsonl` 292, `records.jsonl` 266 (38 valid,
-97 mutated that Java accepts, 131 mutated that Java rejects). Total 12,318.
+6,539 mutated that Java rejects), `headers.jsonl` 292, `records.jsonl` 494 (38 valid;
+`mutated`: 97 Java-accepted, 131 rejected; `mutated_crc_fixed`: 145 Java-accepted, 83
+rejected). Total 12,546.
+
+What the golden tests assert (`spec/tests/golden_{messages,records}.rs`):
+
+- Java accepts: the `Mode::JavaLenient` decode equals Java's value (message strings and
+  record header keys compared after lossy UTF-8 decoding, as Java does) and, for messages,
+  Java's consumed length. The strict decode either equals the lenient decode or is
+  `Err(SpecError::Strict(_))`, and the latter only on mutated vectors. Default, random and
+  valid message vectors also re-encode byte-for-byte.
+- Java rejects: both the strict and the lenient decode reject, except record sets the spec
+  accepts only through an opaque compressed payload (counted separately; see "Compressed
+  payloads" below).
+- The strict-rejection histograms and the opaque-compressed count are asserted exactly.
 
 Strict rejections (spec rejects, Java accepts) in the final run, all on mutated vectors:
 
 - messages: `{"S1NegativeLength": 45, "S2InvalidUtf8": 439, "S3TagOrder": 1, "S4TagSize": 6}`
-- records: `{}`
+- records: `{"S1NegativeLength": 8, "S2InvalidUtf8": 2}` (all from `mutated_crc_fixed`)
+- records accepted by the spec's opaque compressed path where Java rejects: 1 (a v2 batch
+  re-stamped with codec 4/zstd and a garbage payload: "Failed to decompress record stream")
 
-No S5 case occurs in the vectors. S5 is covered by the unit tests in `spec/tests/wire.rs`.
+No S5 or S7 case occurs in the vectors. They are covered by unit tests in
+`spec/tests/wire.rs` and `spec/tests/interp_decode.rs`.
+
+The `mutated_crc_fixed` vectors reach Java's record-level checks (Java errors among the 83
+rejections include "Found invalid record structure", "Invalid negative header key size",
+"Found invalid number of record headers", "Invalid record size: expected to read",
+"Incorrect declared batch size, premature EOF reached", "Unknown compression type id: 7")
+and found no new spec bug: the spec rejects every one of them, and the lenient decode matches
+Java on all 145 accepted ones.
+
+### Compressed payloads
+
+The spec does not decompress or validate compressed payloads (v2 batches with codec 1-4 and
+records; legacy wrappers with codec 1-3). This is a design non-goal, and it makes the spec
+**more lenient than Java** on such input: Java decompresses and parses the inner records
+(`DefaultRecordBatch.compressedIterator`, `AbstractLegacyRecordBatch.DeepRecordsIterator`)
+and rejects corrupt contents. It is the one listed exception to the strictness principle.
 
 Spec bugs found and fixed:
 
@@ -207,10 +238,13 @@ Spec bugs found and fixed:
   codecs 1-3 stay opaque (see "Compressed payloads"). Test:
   `spec/tests/records.rs::legacy_codec_checks_follow_java`. **verified** (source).
 
-No message-interpreter (`interp`/`wire`) bug was found: every default, random and
-Java-accepted mutated message vector decodes to Java's value and consumed length, and every
-default and random vector re-encodes byte-for-byte. Header versions match Java for all 292
-request API versions.
+No message-interpreter (`interp`/`wire`) bug was found by the vectors. Precisely: every
+default and random message vector decodes strictly to Java's value and consumed length and
+re-encodes byte-for-byte; every Java-accepted mutated message vector (2,869) decodes in
+`JavaLenient` mode to Java's value and consumed length, and in strict mode either to the same
+value (2,378) or to a listed `Strict` rejection (491). Header versions match Java for all 292
+request API versions. The final review (I1) found that before the lenient mode existed, the
+491 strict-rejected vectors were not compared with Java at all; they are now.
 
 Final status: `golden_headers`, `golden_messages` (including
 `golden_covers_every_message_version`) and `golden_records` pass.
