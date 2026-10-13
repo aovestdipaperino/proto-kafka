@@ -52,7 +52,7 @@ codec 4 with a garbage payload, "Failed to decompress record stream").
 
 | # | Area | Status |
 |---|---|---|
-| D1 | `UnsignedVarInt::decode` accepts a 5th byte with continuation, misframing the stream | open, fixed in Phase 2 |
+| D1 | `UnsignedVarInt::decode` accepts a 5th byte with continuation, misframing the stream | fixed in Phase 2 |
 | D2 | Generator rule from f0b0238 defaulted every nullable field to null; Java defaults to the type default (`""`, empty) unless `"default": "null"` | fixed in Phase 2 (generator rule reverted to Java's) |
 
 ## Coverage notes

@@ -32,6 +32,7 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
   Java, `(b & 0x7F) << 28` on `u32` in Rust).
 - Status: **verified by reading source**. `UnsignedVarLong` and the signed variants have
   not been checked yet.
+- **Fixed (Phase 2, Task 3).**
 
 ### D2. Generator default rule diverged from Java (crate bug)
 
@@ -51,6 +52,14 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
   `configs: Some(empty)`, like Java. Code that needs null on the wire (e.g. blink's
   `src/kafka/admin.rs` CreateTopics responses, librdkafka compatibility) must set
   `.with_error_message(None)` explicitly, as Java's broker does.
+
+### Other varint decoders (Phase 5 scope)
+
+- `src/records/raw.rs:70-82` (`decode_varint`, protobuf-style u64): rejects a 10th-byte
+  continuation (returns `None` once `shift >= 70`). It does not reject 10th-byte bits beyond
+  bit 63 (silently dropped), so there is no `VarintOverflow` equivalent. The encoder at
+  `raw.rs:92-95` is not a decoder. No other hand-rolled varint decoders exist outside
+  `types.rs`, `primitives.rs` and `src/messages`.
 
 ## Java decode behaviour (ground truth for the reference spec)
 

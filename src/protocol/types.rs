@@ -19,6 +19,7 @@
 use super::{Decodable, Decoder, Encodable, Encoder, NewType, StrBytes};
 use crate::error::{ProtoError, Result};
 use crate::protocol::buf::{ByteBuf, ByteBufMut};
+use crate::protocol::primitives::{self, VarintStep};
 use std::string::String as StdString;
 
 macro_rules! define_copy_impl {
@@ -102,43 +103,37 @@ define_simple_ints! {
     Float64: f64 [put_f64, try_get_f64],
 }
 
+/// Reads one varint byte at a time through the shared state machine.
+fn read_varint<B: ByteBuf>(buf: &mut B, max_bytes: u32) -> Result<u64> {
+    let mut st = primitives::VARINT_START;
+    loop {
+        let b = buf.try_get_u8()?;
+        match primitives::varint_step(st, b, max_bytes).map_err(|e| ProtoError::from_prim(e, "varint"))? {
+            VarintStep::Done(v) => return Ok(v),
+            VarintStep::More(next) => st = next,
+        }
+    }
+}
+
 /// An unsigned zigzag encoded int.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct UnsignedVarInt;
 
 impl<T: NewType<u32>> Encoder<&T> for UnsignedVarInt {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: &T) -> Result<()> {
-        let mut value = *value.borrow();
-        while value >= 0x80 {
-            buf.put_u8((value as u8) | 0x80);
-            value >>= 7;
-        }
-        buf.put_u8(value as u8);
+        let mut out = [0u8; 5];
+        let n = primitives::write_uvarint(*value.borrow(), &mut out);
+        buf.put_slice(&out[..n]);
         Ok(())
     }
     fn compute_size(&self, value: &T) -> Result<usize> {
-        let value = *value.borrow();
-        Ok(match value {
-            0x0..=0x7f => 1,
-            0x80..=0x3fff => 2,
-            0x4000..=0x1fffff => 3,
-            0x200000..=0xfffffff => 4,
-            0x10000000..=0xffffffff => 5,
-        })
+        Ok(primitives::uvarint_size(*value.borrow()))
     }
 }
 
 impl<T: NewType<u32>> Decoder<T> for UnsignedVarInt {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
-        let mut value = 0;
-        for i in 0..5 {
-            let b = buf.try_get_u8()? as u32;
-            value |= (b & 0x7F) << (i * 7);
-            if b < 0x80 {
-                break;
-            }
-        }
-        Ok(value.into())
+        Ok((read_varint(buf, primitives::UVARINT_MAX_BYTES)? as u32).into())
     }
 }
 
@@ -150,42 +145,19 @@ pub struct UnsignedVarLong;
 
 impl<T: NewType<u64>> Encoder<&T> for UnsignedVarLong {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: &T) -> Result<()> {
-        let mut value = *value.borrow();
-        while value >= 0x80 {
-            buf.put_u8((value as u8) | 0x80);
-            value >>= 7;
-        }
-        buf.put_u8(value as u8);
+        let mut out = [0u8; 10];
+        let n = primitives::write_uvarlong(*value.borrow(), &mut out);
+        buf.put_slice(&out[..n]);
         Ok(())
     }
     fn compute_size(&self, value: &T) -> Result<usize> {
-        let value = *value.borrow();
-        Ok(match value {
-            0x0..=0x7f => 1,
-            0x80..=0x3fff => 2,
-            0x4000..=0x1fffff => 3,
-            0x200000..=0xfffffff => 4,
-            0x10000000..=0x7ffffffff => 5,
-            0x800000000..=0x3ffffffffff => 6,
-            0x40000000000..=0x1ffffffffffff => 7,
-            0x2000000000000..=0xffffffffffffff => 8,
-            0x100000000000000..=0x7fffffffffffffff => 9,
-            0x8000000000000000..=0xffffffffffffffff => 10,
-        })
+        Ok(primitives::uvarlong_size(*value.borrow()))
     }
 }
 
 impl<T: NewType<u64>> Decoder<T> for UnsignedVarLong {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
-        let mut value = 0;
-        for i in 0..10 {
-            let b = buf.try_get_u8()? as u64;
-            value |= (b & 0x7F) << (i * 7);
-            if b < 0x80 {
-                break;
-            }
-        }
-        Ok(value.into())
+        Ok(read_varint(buf, primitives::UVARLONG_MAX_BYTES)?.into())
     }
 }
 
@@ -197,21 +169,17 @@ pub struct VarInt;
 
 impl<T: NewType<i32>> Encoder<&T> for VarInt {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: &T) -> Result<()> {
-        let value = *value.borrow();
-        let zigzag = ((value << 1) ^ (value >> 31)) as u32;
-        UnsignedVarInt.encode(buf, zigzag)
+        UnsignedVarInt.encode(buf, primitives::zigzag_encode32(*value.borrow()))
     }
     fn compute_size(&self, value: &T) -> Result<usize> {
-        let value = *value.borrow();
-        let zigzag = ((value << 1) ^ (value >> 31)) as u32;
-        UnsignedVarInt.compute_size(zigzag)
+        UnsignedVarInt.compute_size(primitives::zigzag_encode32(*value.borrow()))
     }
 }
 
 impl<T: NewType<i32>> Decoder<T> for VarInt {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         let zigzag: u32 = UnsignedVarInt.decode(buf)?;
-        Ok((((zigzag >> 1) as i32) ^ (-((zigzag & 1) as i32))).into())
+        Ok(primitives::zigzag_decode32(zigzag).into())
     }
 }
 
@@ -223,21 +191,17 @@ pub struct VarLong;
 
 impl<T: NewType<i64>> Encoder<&T> for VarLong {
     fn encode<B: ByteBufMut>(&self, buf: &mut B, value: &T) -> Result<()> {
-        let value = *value.borrow();
-        let zigzag = ((value << 1) ^ (value >> 63)) as u64;
-        UnsignedVarLong.encode(buf, &zigzag)
+        UnsignedVarLong.encode(buf, &primitives::zigzag_encode64(*value.borrow()))
     }
     fn compute_size(&self, value: &T) -> Result<usize> {
-        let value = *value.borrow();
-        let zigzag = ((value << 1) ^ (value >> 63)) as u64;
-        UnsignedVarLong.compute_size(zigzag)
+        UnsignedVarLong.compute_size(primitives::zigzag_encode64(*value.borrow()))
     }
 }
 
 impl<T: NewType<i64>> Decoder<T> for VarLong {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<T> {
         let zigzag: u64 = UnsignedVarLong.decode(buf)?;
-        Ok((((zigzag >> 1) as i64) ^ (-((zigzag & 1) as i64))).into())
+        Ok(primitives::zigzag_decode64(zigzag).into())
     }
 }
 
@@ -1282,5 +1246,93 @@ mod tests {
     fn smoke_compact_bytes_encoder_decoder() {
         test_encoder_decoder(&CompactBytes, &vec![1, 2, 3, 4], &[5, 1, 2, 3, 4]);
         test_encoder_decoder(&CompactBytes, &None::<Vec<u8>>, &[0]);
+    }
+
+    fn decode_u32(mut input: &[u8]) -> Result<(u32, usize)> {
+        let len = input.len();
+        let v: u32 = UnsignedVarInt.decode(&mut input)?;
+        Ok((v, len - input.len()))
+    }
+
+    #[test]
+    fn varint_fifth_byte_continuation_rejected() {
+        // D1: previously accepted after 5 bytes, leaving the stream misframed.
+        assert!(matches!(
+            decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x8f, 0x00]),
+            Err(ProtoError::VarintTooLong)
+        ));
+    }
+
+    #[test]
+    fn varint_fifth_byte_high_bits_rejected() {
+        assert!(matches!(decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x1f]), Err(ProtoError::VarintOverflow)));
+        assert_eq!(decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x0f]).unwrap(), (u32::MAX, 5));
+    }
+
+    #[test]
+    fn varlong_tenth_byte_rules() {
+        let mut cont: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00];
+        let r: Result<u64> = UnsignedVarLong.decode(&mut cont);
+        assert!(matches!(r, Err(ProtoError::VarintTooLong)));
+        let mut high: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03];
+        let r: Result<u64> = UnsignedVarLong.decode(&mut high);
+        assert!(matches!(r, Err(ProtoError::VarintOverflow)));
+    }
+
+    /// A two-piece buffer whose `chunk()` never spans the boundary.
+    struct TwoChunks {
+        a: Vec<u8>,
+        b: Vec<u8>,
+        pos: usize,
+    }
+
+    impl bytes::Buf for TwoChunks {
+        fn remaining(&self) -> usize {
+            self.a.len() + self.b.len() - self.pos
+        }
+        fn chunk(&self) -> &[u8] {
+            if self.pos < self.a.len() {
+                &self.a[self.pos..]
+            } else {
+                &self.b[self.pos - self.a.len()..]
+            }
+        }
+        fn advance(&mut self, cnt: usize) {
+            self.pos += cnt;
+        }
+    }
+
+    impl ByteBuf for TwoChunks {
+        fn peek_bytes(&mut self, r: std::ops::Range<usize>) -> bytes::Bytes {
+            let all: Vec<u8> = self.a.iter().chain(&self.b).skip(self.pos).copied().collect();
+            bytes::Bytes::copy_from_slice(&all[r])
+        }
+        fn get_bytes(&mut self, size: usize) -> bytes::Bytes {
+            let v = self.peek_bytes(0..size);
+            self.pos += size;
+            v
+        }
+    }
+
+    #[test]
+    fn varint_across_chunk_boundary() {
+        // 300 = [0xac, 0x02]; the first byte is in chunk `a`, the second in chunk `b`.
+        let mut buf = TwoChunks { a: vec![0xac], b: vec![0x02, 0x07], pos: 0 };
+        let v: u32 = UnsignedVarInt.decode(&mut buf).unwrap();
+        assert_eq!((v, bytes::Buf::remaining(&buf)), (300, 1));
+    }
+
+    #[test]
+    fn varint_size_matches_encoding() {
+        for v in [0u32, 127, 128, 16_384, 268_435_456, u32::MAX] {
+            let mut buf = vec![];
+            UnsignedVarInt.encode(&mut buf, v).unwrap();
+            assert_eq!(UnsignedVarInt.compute_size(v).unwrap(), buf.len());
+        }
+        for v in [0u64, 1 << 35, u64::MAX] {
+            let mut buf = vec![];
+            UnsignedVarLong.encode(&mut buf, v).unwrap();
+            assert_eq!(UnsignedVarLong.compute_size(v).unwrap(), buf.len());
+        }
     }
 }

@@ -416,6 +416,30 @@ pub enum ProtoError {
     },
 
     // === Field encoding/decoding ===
+    /// Continuation bit set on the last permitted byte of a varint.
+    #[error("varint is too long")]
+    VarintTooLong,
+    /// The last byte of a varint carries bits beyond the target width.
+    #[error("varint overflows its type")]
+    VarintOverflow,
+    /// A decoded string is longer than 0x7fff bytes.
+    #[error("{field} too long ({len} bytes, max 32767)")]
+    StringTooLong {
+        /// The field name.
+        field: &'static str,
+        /// The declared length.
+        len: usize,
+    },
+    /// An array declares more elements than there are bytes remaining.
+    #[error("{field} declares {len} elements but only {remaining} bytes remain")]
+    ArrayTooLong {
+        /// The field name.
+        field: &'static str,
+        /// The declared element count.
+        len: usize,
+        /// Bytes remaining in the buffer.
+        remaining: usize,
+    },
     /// A length or count field was unexpectedly negative.
     #[error("unexpected negative {field}: {value}")]
     NegativeLength {
@@ -515,6 +539,21 @@ pub enum ProtoError {
         /// Description of the structural problem.
         detail: &'static str,
     },
+}
+
+impl ProtoError {
+    /// Converts a primitive-codec error, attaching the field it occurred in.
+    pub(crate) fn from_prim(e: crate::protocol::primitives::PrimError, field: &'static str) -> Self {
+        use crate::protocol::primitives::PrimError;
+        match e {
+            PrimError::Eof => ProtoError::NotEnoughBytes,
+            PrimError::VarintTooLong => ProtoError::VarintTooLong,
+            PrimError::VarintOverflow => ProtoError::VarintOverflow,
+            PrimError::NegativeLength(v) => ProtoError::NegativeLength { field, value: i64::from(v) },
+            PrimError::StringTooLong(len) => ProtoError::StringTooLong { field, len },
+            PrimError::ArrayTooLong(len, remaining) => ProtoError::ArrayTooLong { field, len, remaining },
+        }
+    }
 }
 
 impl From<crate::protocol::buf::NotEnoughBytesError> for ProtoError {
