@@ -168,7 +168,7 @@ impl Encodable for CreatableTopicConfigs {
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -232,7 +232,7 @@ impl Encodable for CreatableTopicConfigs {
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -489,7 +489,7 @@ impl Encodable for CreatableTopicResult {
             if self.topic_config_error_code != 0 {
                 num_tagged_fields += 1;
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -535,7 +535,7 @@ impl Encodable for CreatableTopicResult {
             if self.topic_config_error_code != 0 {
                 num_tagged_fields += 1;
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -631,11 +631,11 @@ impl Default for CreatableTopicResult {
             name: Default::default(),
             topic_id: Uuid::nil(),
             error_code: 0,
-            error_message: None,
+            error_message: Some(Default::default()),
             topic_config_error_code: 0,
             num_partitions: -1,
             replication_factor: -1,
-            configs: None,
+            configs: Some(Default::default()),
             unknown_tagged_fields: BTreeMap::new(),
         }
     }
@@ -712,7 +712,7 @@ impl Encodable for CreateTopicsResponse {
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -735,7 +735,7 @@ impl Encodable for CreateTopicsResponse {
         }
         if version >= 5 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

@@ -33,20 +33,24 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
 - Status: **verified by reading source**. `UnsignedVarLong` and the signed variants have
   not been checked yet.
 
-### D2. Committed generated code is stale relative to the generator (crate bug)
+### D2. Generator default rule diverged from Java (crate bug)
 
-- Commit `f0b0238` changed the generator so nullable fields default to null instead of
-  `Some("")`. It fixed a librdkafka wire incompatibility in CreateTopics. Only
-  `create_topics_*` was regenerated.
-- Running `cargo run -p protocol_codegen` at that commit changes **55 files under `src/`**
-  (+133/−191). Example: `request_header.rs` has the committed `Default`
-  `client_id: Some(Default::default())`, where the generator now produces `None`.
-- Every other message with a nullable field whose default is null still ships the old
-  default. Encoding a default-constructed message writes `""` where Java writes null (−1),
-  which is the same class of bug f0b0238 fixed for CreateTopics.
-- Status: **verified by running the codegen** (Phase 1, Task 4). Not fixed in Phase 1,
-  which must not change proto-kafka behaviour. Regenerating `src/` belongs in Phase 2, and
-  the Phase 4 encode harnesses would flag it.
+- Java's `FieldSpec.fieldDefault` gives `""` (string), empty (bytes/array), etc. for a
+  nullable field **without** an explicit `"default"`. The default is null only for
+  `"default": "null"`.
+- Commit `f0b0238` made the generator default every nullable field without an explicit
+  default to null (`PreparedDefault::Null`), calling this a "Kafka convention". That
+  diverges from Java. Golden evidence: Java's default `RequestHeader` v1 encodes
+  `client_id` as `00 00` (empty string); the generated code after f0b0238 encodes `ff ff`.
+- The earlier Phase 1 note that called the committed `src/` files "stale" had it backwards:
+  the committed files (except CreateTopics, hand-edited in f0b0238) matched Java; the
+  generator rule was wrong.
+- **Fixed (Phase 2, Task 1):** rule reverted, `src/` regenerated, `tests/golden_defaults.rs`
+  pins header defaults to Java's.
+- Consequence: `CreatableTopicResult::default()` now has `error_message: Some("")` and
+  `configs: Some(empty)`, like Java. Code that needs null on the wire (e.g. blink's
+  `src/kafka/admin.rs` CreateTopics responses, librdkafka compatibility) must set
+  `.with_error_message(None)` explicitly, as Java's broker does.
 
 ## Java decode behaviour (ground truth for the reference spec)
 
@@ -255,3 +259,6 @@ Final status: `golden_headers`, `golden_messages` (including
   Central, so the golden generator can be a Maven project.
 - Not installed: Kani, Lean/elan, Charon, Aeneas.
 - `docs/superpowers/` is gitignored in proto-kafka, so specs and plans stay local.
+- Correction: the earlier claim that main did not compile on Rust 1.88 was wrong. It came
+  from Homebrew rustc 1.99 shadowing rustup's 1.88. `std::u32::MAX` is only an error on
+  newer compilers; the generator now emits `u32::MAX` for forward compatibility.

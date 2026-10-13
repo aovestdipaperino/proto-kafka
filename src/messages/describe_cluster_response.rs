@@ -133,7 +133,7 @@ impl Encodable for DescribeClusterBroker {
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -161,7 +161,7 @@ impl Encodable for DescribeClusterBroker {
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -389,7 +389,7 @@ impl Encodable for DescribeClusterResponse {
         types::CompactArray(types::Struct { version }).encode(buf, &self.brokers)?;
         types::Int32.encode(buf, &self.cluster_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -420,7 +420,7 @@ impl Encodable for DescribeClusterResponse {
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.brokers)?;
         total_size += types::Int32.compute_size(&self.cluster_authorized_operations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

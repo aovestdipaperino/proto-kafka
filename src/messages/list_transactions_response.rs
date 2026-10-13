@@ -109,7 +109,7 @@ impl Encodable for ListTransactionsResponse {
         types::CompactArray(types::CompactString).encode(buf, &self.unknown_state_filters)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -129,7 +129,7 @@ impl Encodable for ListTransactionsResponse {
         total_size += types::CompactArray(types::Struct { version })
             .compute_size(&self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -266,7 +266,7 @@ impl Encodable for TransactionState {
         types::Int64.encode(buf, &self.producer_id)?;
         types::CompactString.encode(buf, &self.transaction_state)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -283,7 +283,7 @@ impl Encodable for TransactionState {
         total_size += types::Int64.compute_size(&self.producer_id)?;
         total_size += types::CompactString.compute_size(&self.transaction_state)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

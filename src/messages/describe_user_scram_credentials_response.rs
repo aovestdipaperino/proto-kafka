@@ -79,7 +79,7 @@ impl Encodable for CredentialInfo {
         types::Int8.encode(buf, &self.mechanism)?;
         types::Int32.encode(buf, &self.iterations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -95,7 +95,7 @@ impl Encodable for CredentialInfo {
         total_size += types::Int8.compute_size(&self.mechanism)?;
         total_size += types::Int32.compute_size(&self.iterations)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -241,7 +241,7 @@ impl Encodable for DescribeUserScramCredentialsResponse {
         types::CompactString.encode(buf, &self.error_message)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -259,7 +259,7 @@ impl Encodable for DescribeUserScramCredentialsResponse {
         total_size += types::CompactString.compute_size(&self.error_message)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -411,7 +411,7 @@ impl Encodable for DescribeUserScramCredentialsResult {
         types::CompactString.encode(buf, &self.error_message)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.credential_infos)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -430,7 +430,7 @@ impl Encodable for DescribeUserScramCredentialsResult {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.credential_infos)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

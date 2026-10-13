@@ -1581,6 +1581,8 @@ dependencies = [
  "indexmap 2.14.0",
  "lz4",
  "paste",
+ "proto-kafka-spec",
+ "serde_json",
  "snap",
  "testcontainers",
  "thiserror",

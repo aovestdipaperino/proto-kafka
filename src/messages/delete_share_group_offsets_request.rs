@@ -79,7 +79,7 @@ impl Encodable for DeleteShareGroupOffsetsRequest {
         types::CompactString.encode(buf, &self.group_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -95,7 +95,7 @@ impl Encodable for DeleteShareGroupOffsetsRequest {
         total_size += types::CompactString.compute_size(&self.group_id)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -196,7 +196,7 @@ impl Encodable for DeleteShareGroupOffsetsRequestTopic {
         }
         types::CompactString.encode(buf, &self.topic_name)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -211,7 +211,7 @@ impl Encodable for DeleteShareGroupOffsetsRequestTopic {
         let mut total_size = 0;
         total_size += types::CompactString.compute_size(&self.topic_name)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.20.0
+
+### Breaking
+
+- **Default values for nullable fields follow Kafka's Java defaults (D2).** A nullable field without an explicit `"default": "null"` in the schema now defaults to the type default (`Some("")`, empty array/bytes) instead of null, matching Java (e.g. `RequestHeader` v1 `client_id` encodes as an empty string). This reverts the generator rule added in f0b0238. Consequence: `CreatableTopicResult::default()` has `error_message: Some("")`; code that needs null on the wire (e.g. librdkafka-compatible CreateTopics responses) must call `.with_error_message(None)` explicitly, as Java's broker does.
 
 ### Bug fixes
 
+- The generator no longer emits the deprecated `std::u32::MAX` (now `u32::MAX`), for forward compatibility with newer rustc versions where it fails under `#![deny(warnings)]`; all messages regenerated.
 - **`compression::snappy::decompress` corrupts raw snappy payloads ≥ 16 bytes.** The Xerial magic header probe used `try_get_bytes(16)`, which consumes the bytes from the buffer. If the magic didn't match (raw snappy fallback path), the fallback read from the already-advanced buffer and got truncated data, producing a decompression error. The probe now uses `try_peek_bytes(0..16)` and explicitly consumes the magic bytes only after the match is confirmed. Includes regression test `decompression_fallback_large_payload`. Ported from upstream commit `14d3e104` (PR #149, Steven Le Roux).
 
 ## 0.19.2

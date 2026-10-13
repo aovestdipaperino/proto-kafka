@@ -124,7 +124,7 @@ impl Encodable for PushTelemetryRequest {
         types::Int8.encode(buf, &self.compression_type)?;
         types::CompactBytes.encode(buf, &self.metrics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -143,7 +143,7 @@ impl Encodable for PushTelemetryRequest {
         total_size += types::Int8.compute_size(&self.compression_type)?;
         total_size += types::CompactBytes.compute_size(&self.metrics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
