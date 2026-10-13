@@ -12,8 +12,8 @@ pub enum Strict {
     S4TagSize,
     /// Final varint/varlong byte has bits set that Java silently drops.
     S5VarintHighBits,
-    /// Record batch magic other than 0, 1, 2 (Java treats magic > 1 as v2 and does not check it).
-    S6UnknownMagic,
+    // S6 (unknown record batch magic) was retracted: Java's MemoryRecords path rejects
+    // magic outside 0..=2, so the spec rejects it with SpecError::Records. See FINDINGS.
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

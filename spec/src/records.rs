@@ -93,6 +93,18 @@ pub fn decode(input: &[u8]) -> Result<RecordSet> {
         if size < LEGACY_MIN_SIZE {
             return Err(err(format!("record size {size} below minimum")));
         }
+        // Java (ByteBufferLogInputStream.nextBatchSize) validates the magic byte as soon
+        // as it is visible, before checking that the whole batch is present.
+        if rest.len() <= MAGIC_OFFSET {
+            return Ok(RecordSet {
+                entries,
+                truncated_tail: rest.len(),
+            });
+        }
+        let magic = rest[MAGIC_OFFSET] as i8;
+        if !(0..=2).contains(&magic) {
+            return Err(err(format!("invalid magic {magic}")));
+        }
         let total = LOG_OVERHEAD + size as usize;
         if rest.len() < total {
             return Ok(RecordSet {
@@ -101,10 +113,10 @@ pub fn decode(input: &[u8]) -> Result<RecordSet> {
             });
         }
         let frame = &rest[..total];
-        entries.push(match frame[MAGIC_OFFSET] as i8 {
-            2 => Entry::V2(decode_v2(frame)?),
-            0 | 1 => Entry::Legacy(decode_legacy(frame)?),
-            _ => return Err(SpecError::Strict(Strict::S6UnknownMagic)),
+        entries.push(if magic == 2 {
+            Entry::V2(decode_v2(frame)?)
+        } else {
+            Entry::Legacy(decode_legacy(frame)?)
         });
         pos += total;
     }

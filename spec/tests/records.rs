@@ -1,4 +1,4 @@
-use proto_kafka_spec::error::{SpecError, Strict};
+use proto_kafka_spec::error::SpecError;
 use proto_kafka_spec::records::{decode, Entry, Payload};
 use proto_kafka_spec::wire::Writer;
 
@@ -135,10 +135,46 @@ fn partial_trailing_batch_is_a_tail_not_an_error() {
     assert_eq!(set.truncated_tail, 20);
 }
 
+/// Java's MemoryRecords path (ByteBufferLogInputStream.nextBatchSize) throws
+/// "Invalid magic found in record" for magic outside 0..=2. Not a strictness divergence.
 #[test]
-fn unknown_magic_is_strict() {
-    let b = v2_batch_with_magic(3, &[record(0, None, Some(b"v"), &[])], 0);
-    assert_eq!(decode(&b), Err(SpecError::Strict(Strict::S6UnknownMagic)));
+fn unknown_magic_is_rejected_like_java() {
+    for magic in [3i8, 44, -1] {
+        let b = v2_batch_with_magic(magic, &[record(0, None, Some(b"v"), &[])], 0);
+        assert!(
+            matches!(decode(&b), Err(SpecError::Records(_))),
+            "magic {magic}"
+        );
+    }
+}
+
+/// Golden regression (records.jsonl, mutated): Java checks the magic byte as soon as
+/// 17 bytes (HEADER_SIZE_UP_TO_MAGIC) are available, before checking that the whole
+/// batch is present, so an invalid magic in a truncated tail is an error, not a tail.
+#[test]
+fn invalid_magic_in_truncated_tail_is_rejected_like_java() {
+    let golden =
+        hex("00000000000003760000ff001d3005c004010000000174877b1b6d00000004cafd5cd200000003d73349");
+    assert!(matches!(decode(&golden), Err(SpecError::Records(_))));
+
+    let one = v2_batch(&[record(0, None, Some(b"v"), &[])]);
+    let mut tail = one[..20].to_vec();
+    tail[16] = 7;
+    assert!(matches!(
+        decode(&[one.clone(), tail].concat()),
+        Err(SpecError::Records(_))
+    ));
+    // Fewer than 17 bytes: magic is not visible yet, so it is still a tail.
+    let short = one[..16].to_vec();
+    let set = decode(&[one, short].concat()).unwrap();
+    assert_eq!((set.entries.len(), set.truncated_tail), (1, 16));
+}
+
+fn hex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 #[test]
