@@ -12,9 +12,15 @@ Regenerate (Java 17 + Maven):
   JsonConverter output).
 - `headers.jsonl`: Java's request/response header version for every API version.
 - `records.jsonl`: v0/v1/v2 record sets (plain, idempotent, transactional, concatenated) and
-  mutations, with Java's decode outcome.
+  mutations, with Java's decode outcome. Each valid set gets 6 plain mutations (origin
+  `mutated`) and 6 mutations whose CRCs are then re-stamped (origin `mutated_crc_fixed`:
+  CRC32C over bytes 21.. of each complete v2 batch into bytes 17..21, CRC32 over bytes 16.. of
+  each complete legacy entry into bytes 12..16). Plain mutations nearly always fail Java's CRC
+  check, so only the CRC-fixed ones reach `DefaultRecord.readFrom` and legacy key/value
+  parsing. The CRC-fixed mutations draw from their own seeded `Random`, so the other vectors
+  are byte-identical to the previous generator.
 
-Consumed by `spec/tests/golden_*.rs`. Bumping the Kafka version means bumping it here and in
+Consumed by `spec/tests/golden_*.rs`, which treat `mutated_crc_fixed` exactly like `mutated`. Bumping the Kafka version means bumping it here and in
 `protocol_codegen/src/main.rs` together.
 
 Notes:

@@ -82,9 +82,9 @@ fn summarize(entries: &[Entry]) -> J {
 }
 
 /// Strict rejections of Java-accepted vectors, by variant (asserted exactly).
-const EXPECTED_STRICT: &[(&str, usize)] = &[];
+const EXPECTED_STRICT: &[(&str, usize)] = &[("S1NegativeLength", 8), ("S2InvalidUtf8", 2)];
 /// Java rejects, spec accepts because the payload is compressed and opaque (asserted exactly).
-const EXPECTED_OPAQUE: usize = 0;
+const EXPECTED_OPAQUE: usize = 1;
 
 /// Same contract as `golden_messages::messages_conform_to_java`: Java-accepted vectors
 /// decode in `JavaLenient` mode to Java's summary, and the strict decode equals the lenient

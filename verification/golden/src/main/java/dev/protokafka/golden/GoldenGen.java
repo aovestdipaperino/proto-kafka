@@ -23,6 +23,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
+import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
 
 import java.io.File;
@@ -40,11 +41,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 import java.util.function.Supplier;
+import java.util.zip.CRC32;
 
 /** Emits golden vectors from Kafka's own serializers. Deterministic (fixed seed). */
 public final class GoldenGen {
     private static final ObjectMapper M = new ObjectMapper();
     private static final Random R = new Random(0x5EEDL);
+    /** Separate stream for CRC-fixed record mutations, so the other vectors stay byte-identical. */
+    private static final Random CRC_FIXED_R = new Random(0xC4C32CL);
+    private static final int RECORD_MUTATIONS = 6;
     private static final int RANDOM_PER_VERSION = 3;
     private static final int MUTATIONS_PER_VECTOR = 4;
     private static final int MAX_DEPTH = 3;
@@ -280,19 +285,23 @@ public final class GoldenGen {
     }
 
     private static byte[] mutate(byte[] b) {
+        return mutate(b, R);
+    }
+
+    private static byte[] mutate(byte[] b, Random r) {
         if (b.length == 0) return new byte[] {(byte) 0xff};
         byte[] out;
-        switch (R.nextInt(3)) {
+        switch (r.nextInt(3)) {
             case 0 -> {
-                out = new byte[R.nextInt(b.length)];
+                out = new byte[r.nextInt(b.length)];
                 System.arraycopy(b, 0, out, 0, out.length);
             }
             case 1 -> {
                 out = b.clone();
-                out[R.nextInt(b.length)] = (byte) R.nextInt();
+                out[r.nextInt(b.length)] = (byte) r.nextInt();
             }
             default -> {
-                int at = R.nextInt(b.length + 1);
+                int at = r.nextInt(b.length + 1);
                 out = new byte[b.length + 1];
                 System.arraycopy(b, 0, out, 0, at);
                 out[at] = (byte) 0xff;
@@ -370,8 +379,40 @@ public final class GoldenGen {
         valid.add(concat(valid.get(0), valid.get(valid.size() - 1)));
         for (byte[] b : valid) {
             emitRecordDecode(w, b, "valid");
-            for (int i = 0; i < 6; i++) emitRecordDecode(w, mutate(b), "mutated");
+            for (int i = 0; i < RECORD_MUTATIONS; i++) emitRecordDecode(w, mutate(b), "mutated");
+            // A plain mutation almost always breaks the CRC, so Java stops at ensureValid() and
+            // never reaches DefaultRecord.readFrom / LegacyRecord key-value parsing. Re-stamping
+            // the CRCs makes those paths reachable.
+            for (int i = 0; i < RECORD_MUTATIONS; i++) {
+                emitRecordDecode(w, restampCrcs(mutate(b, CRC_FIXED_R)), "mutated_crc_fixed");
+            }
         }
+    }
+
+    /**
+     * Re-stamps the CRC of every complete entry in a (mutated) record set, walking it with
+     * the declared sizes: v2 CRC32C over bytes 21.. of the batch into bytes 17..21, legacy
+     * CRC32 over bytes 16.. of the entry into bytes 12..16. Stops at the first entry whose
+     * declared size is negative or runs past the end.
+     */
+    private static byte[] restampCrcs(byte[] b) {
+        ByteBuffer buf = ByteBuffer.wrap(b);
+        int pos = 0;
+        while (b.length - pos >= 17) {
+            int size = buf.getInt(pos + 8);
+            if (size < 0 || (long) pos + 12 + size > b.length) break;
+            int end = pos + 12 + size;
+            byte magic = b[pos + 16];
+            if (magic == 2 && end >= pos + 21) {
+                buf.putInt(pos + 17, (int) Crc32C.compute(b, pos + 21, end - (pos + 21)));
+            } else if ((magic == 0 || magic == 1) && end >= pos + 16) {
+                CRC32 crc = new CRC32();
+                crc.update(b, pos + 16, end - (pos + 16));
+                buf.putInt(pos + 12, (int) crc.getValue());
+            }
+            pos = end;
+        }
+        return b;
     }
 
     private static SimpleRecord[] randomRecords(int n, byte magic) {
