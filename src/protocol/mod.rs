@@ -20,6 +20,7 @@ use buf::{ByteBuf, ByteBufMut};
 use bytes::Bytes;
 
 pub mod buf;
+pub mod primitives;
 pub mod types;
 
 pub use buf::SegmentedBuf;
