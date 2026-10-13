@@ -175,6 +175,20 @@ fn emit_struct(
         "pub static {msg}__{ident}: StructSchema = StructSchema {{ name: {name:?}, fields: &["
     )?;
     for f in fields {
+        // Java reads a *tagged* nullable struct's presence as `readUnsignedVarint() <= 0`
+        // (MessageDataGenerator.generateStructReader, tagged=true), not the 1-byte marker the
+        // spec interpreter implements for untagged nullable structs. No Kafka 4.1.0 schema has
+        // one, so refuse to emit it rather than silently produce a wrong table.
+        if matches!(f.type_, TypeSpec::Struct(_))
+            && f.tag.is_some()
+            && f.nullable_versions != VersionSpec::None
+        {
+            bail!(
+                "{name}.{}: tagged nullable struct fields are not supported by the spec \
+                 interpreter (Java reads a varint presence marker; see docs/FINDINGS.md)",
+                f.name
+            );
+        }
         let tag = f.tag.map_or("None".to_string(), |t| format!("Some({t})"));
         let flexible = f
             .flexible_versions
@@ -257,6 +271,26 @@ mod tests {
         assert!(
             out.contains("pub static ALL: &[&MessageSchema] = &[&FIND_COORDINATOR_REQUEST];"),
             "{out}"
+        );
+    }
+
+    #[test]
+    fn rejects_tagged_nullable_struct() {
+        let s = spec(
+            r#"{
+          "apiKey": 10, "type": "request", "name": "SomeRequest",
+          "validVersions": "0", "flexibleVersions": "0+",
+          "fields": [
+            { "name": "Opt", "type": "Inner", "versions": "0+", "nullableVersions": "0+",
+              "taggedVersions": "0+", "tag": 0, "default": "null",
+              "fields": [ { "name": "V", "type": "int32", "versions": "0+" } ] }
+          ]
+        }"#,
+        );
+        let err = emit(&[s]).unwrap_err().to_string();
+        assert!(
+            err.contains("tagged nullable struct fields are not supported"),
+            "{err}"
         );
     }
 

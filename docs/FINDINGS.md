@@ -75,9 +75,16 @@ every `*Data(Readable, short)` constructor. **verified**
   writes `records` as an **empty** `BinaryNode` (KIP-673; `JsonConverterGenerator.java:404-412`).
   Golden vectors can't rely on Java's JSON for record fields.
 
-- **Nullable struct fields** (not arrays): a 1-byte presence marker. On read,
+- **Nullable struct fields, untagged** (not arrays): a 1-byte presence marker. On read,
   `readByte() < 0` means null and anything else means present. On write, Java writes `-1`
   for null and `1` for present (`MessageDataGenerator.java:549,756,766`). **verified**
+  A *tagged* nullable struct is read differently: `generateStructReader(.., tagged=true)`
+  emits `if (_readable.readUnsignedVarint() <= 0) null` (`MessageDataGenerator.java:546-547`).
+  The spec interpreter implements only the untagged byte form. No Kafka 4.1.0 schema has a
+  tagged nullable struct (7 tagged struct fields, none nullable; scanned
+  `clients/src/main/resources/common/message/*.json`), so the schema-table emitter
+  (`protocol_codegen/src/generate_messages/spec_tables.rs`) refuses to emit one
+  (test `rejects_tagged_nullable_struct`). Supporting it is future work. **verified**
 - **Header versions** (`ApiMessageTypeGenerator.generateHeaderVersion`): the request header
   is v2 if the API version is flexible, else v1. The response header is v1 if flexible, else
   v0, **except ApiVersions (key 18) responses, which always use header v0** (KIP-511).
