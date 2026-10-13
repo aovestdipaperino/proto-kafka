@@ -182,6 +182,8 @@ public final class GoldenGen {
                 // not a field accessor
             }
         }
+        // Class.getMethods() order is not stable across JVM runs; sort so the seeded draws are reproducible.
+        out.sort(java.util.Comparator.comparing(Method::getName));
         return out;
     }
 

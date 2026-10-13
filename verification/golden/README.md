@@ -23,3 +23,5 @@ Notes:
 - Random generation of unsigned fields (for example uint16 `port`, held in a Java `int`) retries
   with an in-range value when Java's setter rejects the first draw. This is a generator-side
   fix; it does not change what Java's serializers emit.
+- `Class.getMethods()` order varies between JVM runs, so field getters are sorted by name before
+  seeded random generation; without this the vectors were not reproducible.
