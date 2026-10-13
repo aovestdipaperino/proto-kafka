@@ -6,25 +6,78 @@ use proto_kafka_spec::value::{StructValue, Value};
 static TOPIC: StructSchema = StructSchema {
     name: "Topic",
     fields: &[
-        FieldDesc { name: "Name", ty: FieldType::Prim(Prim::String), versions: Versions::since(0), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "Partitions", ty: FieldType::PrimArray(Prim::Int32), versions: Versions::since(0), ..FieldDesc::DEFAULT },
+        FieldDesc {
+            name: "Name",
+            ty: FieldType::Prim(Prim::String),
+            versions: Versions::since(0),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "Partitions",
+            ty: FieldType::PrimArray(Prim::Int32),
+            versions: Versions::since(0),
+            ..FieldDesc::DEFAULT
+        },
     ],
 };
 
 static LEADER: StructSchema = StructSchema {
     name: "Leader",
-    fields: &[FieldDesc { name: "Id", ty: FieldType::Prim(Prim::Int32), versions: Versions::since(0), ..FieldDesc::DEFAULT }],
+    fields: &[FieldDesc {
+        name: "Id",
+        ty: FieldType::Prim(Prim::Int32),
+        versions: Versions::since(0),
+        ..FieldDesc::DEFAULT
+    }],
 };
 
 static ROOT: StructSchema = StructSchema {
     name: "TestRequest",
     fields: &[
-        FieldDesc { name: "Id", ty: FieldType::Prim(Prim::Int32), versions: Versions::since(0), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "Note", ty: FieldType::Prim(Prim::String), versions: Versions::since(1), nullable: Versions::since(1), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "Topics", ty: FieldType::StructArray(&TOPIC), versions: Versions::since(0), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "Hint", ty: FieldType::Prim(Prim::Int64), versions: Versions::since(2), tag: Some(0), tagged: Versions::since(2), default: DefaultVal::Int(-1), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "CurrentLeader", ty: FieldType::Struct(&LEADER), versions: Versions::since(2), tag: Some(2), tagged: Versions::since(2), ..FieldDesc::DEFAULT },
-        FieldDesc { name: "Later", ty: FieldType::Prim(Prim::Int8), versions: Versions::since(3), tag: Some(1), tagged: Versions::since(3), ..FieldDesc::DEFAULT },
+        FieldDesc {
+            name: "Id",
+            ty: FieldType::Prim(Prim::Int32),
+            versions: Versions::since(0),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "Note",
+            ty: FieldType::Prim(Prim::String),
+            versions: Versions::since(1),
+            nullable: Versions::since(1),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "Topics",
+            ty: FieldType::StructArray(&TOPIC),
+            versions: Versions::since(0),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "Hint",
+            ty: FieldType::Prim(Prim::Int64),
+            versions: Versions::since(2),
+            tag: Some(0),
+            tagged: Versions::since(2),
+            default: DefaultVal::Int(-1),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "CurrentLeader",
+            ty: FieldType::Struct(&LEADER),
+            versions: Versions::since(2),
+            tag: Some(2),
+            tagged: Versions::since(2),
+            ..FieldDesc::DEFAULT
+        },
+        FieldDesc {
+            name: "Later",
+            ty: FieldType::Prim(Prim::Int8),
+            versions: Versions::since(3),
+            tag: Some(1),
+            tagged: Versions::since(3),
+            ..FieldDesc::DEFAULT
+        },
     ],
 };
 
@@ -41,12 +94,18 @@ fn s(v: &[u8]) -> Value {
     Value::Str(Some(v.to_vec()))
 }
 fn st(fields: Vec<(&'static str, Value)>) -> Value {
-    Value::Struct(Some(Box::new(StructValue { fields, unknown_tags: vec![] })))
+    Value::Struct(Some(Box::new(StructValue {
+        fields,
+        unknown_tags: vec![],
+    })))
 }
 fn topic_a12() -> Value {
     Value::Array(Some(vec![st(vec![
         ("Name", s(b"a")),
-        ("Partitions", Value::Array(Some(vec![Value::I32(1), Value::I32(2)]))),
+        (
+            "Partitions",
+            Value::Array(Some(vec![Value::I32(1), Value::I32(2)])),
+        ),
     ])]))
 }
 fn default_leader() -> Value {
@@ -64,7 +123,10 @@ const V0: &[u8] = &[
 fn v0_classic_encoding() {
     let (v, n) = decode(&TEST, 0, V0).unwrap();
     assert_eq!(n, V0.len());
-    assert_eq!(v.fields, vec![("Id", Value::I32(7)), ("Topics", topic_a12())]);
+    assert_eq!(
+        v.fields,
+        vec![("Id", Value::I32(7)), ("Topics", topic_a12())]
+    );
 }
 
 #[test]
@@ -77,7 +139,10 @@ fn v1_nullable_string_null() {
 #[test]
 fn v1_negative_length_below_minus_one_is_strict() {
     let bytes = [&[0, 0, 0, 7, 0xff, 0xfe][..], &V0[4..]].concat();
-    assert_eq!(decode(&TEST, 1, &bytes), Err(SpecError::Strict(Strict::S1NegativeLength)));
+    assert_eq!(
+        decode(&TEST, 1, &bytes),
+        Err(SpecError::Strict(Strict::S1NegativeLength))
+    );
 }
 
 #[test]
@@ -85,23 +150,29 @@ fn non_nullable_null_is_rejected() {
     let mut bytes = V0.to_vec();
     bytes[8] = 0xff; // Name length -1
     bytes[9] = 0xff;
-    assert_eq!(decode(&TEST, 0, &bytes), Err(SpecError::NullNotAllowed("Name")));
+    assert_eq!(
+        decode(&TEST, 0, &bytes),
+        Err(SpecError::NullNotAllowed("Name"))
+    );
 }
 
 #[test]
 fn invalid_utf8_is_strict() {
     let mut bytes = V0.to_vec();
     bytes[10] = 0xff;
-    assert_eq!(decode(&TEST, 0, &bytes), Err(SpecError::Strict(Strict::S2InvalidUtf8)));
+    assert_eq!(
+        decode(&TEST, 0, &bytes),
+        Err(SpecError::Strict(Strict::S2InvalidUtf8))
+    );
 }
 
 /// v2 body up to (not including) the root tagged section.
 const V2_BODY: &[u8] = &[
-    0, 0, 0, 7, // Id
+    0, 0, 0, 7,    // Id
     0x00, // Note: compact null
     0x02, // Topics: compact len 1
     0x02, b'a', // Name compact
-    0x03, 0, 0, 0, 1, 0, 0, 0, 2, // Partitions compact len 2
+    0x03, 0, 0, 0, 1, 0, 0, 0, 2,    // Partitions compact len 2
     0x00, // Topic tagged section: empty
 ];
 
@@ -133,10 +204,16 @@ fn v2_absent_tagged_field_takes_default() {
 fn tagged_struct_field_decodes_in_window() {
     // tag 2, size 6: Leader.Id = 9, then Leader's own empty tagged section, then 1 pad byte => S4
     let bad = [V2_BODY, &[0x01, 0x02, 0x06, 0, 0, 0, 9, 0x00, 0xaa]].concat();
-    assert_eq!(decode(&TEST, 2, &bad), Err(SpecError::Strict(Strict::S4TagSize)));
+    assert_eq!(
+        decode(&TEST, 2, &bad),
+        Err(SpecError::Strict(Strict::S4TagSize))
+    );
     let good = [V2_BODY, &[0x01, 0x02, 0x05, 0, 0, 0, 9, 0x00]].concat();
     let (v, _) = decode(&TEST, 2, &good).unwrap();
-    assert_eq!(v.get("CurrentLeader"), Some(&st(vec![("Id", Value::I32(9))])));
+    assert_eq!(
+        v.get("CurrentLeader"),
+        Some(&st(vec![("Id", Value::I32(9))]))
+    );
 }
 
 #[test]
@@ -149,34 +226,56 @@ fn unknown_tags_are_preserved_in_order() {
 #[test]
 fn tags_out_of_order_or_duplicated_are_strict() {
     let dup = [V2_BODY, &[0x02, 0x05, 0x00, 0x05, 0x00]].concat();
-    assert_eq!(decode(&TEST, 2, &dup), Err(SpecError::Strict(Strict::S3TagOrder)));
-    let desc = [V2_BODY, &[0x02, 0x05, 0x00, 0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 5]].concat();
-    assert_eq!(decode(&TEST, 2, &desc), Err(SpecError::Strict(Strict::S3TagOrder)));
+    assert_eq!(
+        decode(&TEST, 2, &dup),
+        Err(SpecError::Strict(Strict::S3TagOrder))
+    );
+    let desc = [
+        V2_BODY,
+        &[0x02, 0x05, 0x00, 0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 5],
+    ]
+    .concat();
+    assert_eq!(
+        decode(&TEST, 2, &desc),
+        Err(SpecError::Strict(Strict::S3TagOrder))
+    );
 }
 
 #[test]
 fn known_tag_short_size_is_strict() {
     let bytes = [V2_BODY, &[0x01, 0x00, 0x04, 0, 0, 0, 5]].concat();
-    assert_eq!(decode(&TEST, 2, &bytes), Err(SpecError::Strict(Strict::S4TagSize)));
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::Strict(Strict::S4TagSize))
+    );
 }
 
 #[test]
 fn known_tag_invalid_for_version_is_rejected() {
     let bytes = [V2_BODY, &[0x01, 0x01, 0x01, 0x00]].concat();
-    assert_eq!(decode(&TEST, 2, &bytes), Err(SpecError::TagNotValidForVersion(1)));
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::TagNotValidForVersion(1))
+    );
 }
 
 #[test]
 fn array_longer_than_remaining_is_rejected() {
     let bytes = [&[0, 0, 0, 7, 0x00, 0x7f][..]].concat(); // Topics compact len 126
-    assert_eq!(decode(&TEST, 2, &bytes), Err(SpecError::ArrayTooLong("Topics")));
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::ArrayTooLong("Topics"))
+    );
 }
 
 #[test]
 fn compact_string_over_0x7fff_is_rejected() {
     // Note: compact length 0x8000 + 1 => uvarint 0x8001 = [0x81, 0x80, 0x02]
     let bytes = [&[0, 0, 0, 7, 0x81, 0x80, 0x02][..], &[0u8; 0x8000]].concat();
-    assert_eq!(decode(&TEST, 2, &bytes), Err(SpecError::StringTooLong("Note")));
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::StringTooLong("Note"))
+    );
 }
 
 #[test]

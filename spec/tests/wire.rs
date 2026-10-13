@@ -16,7 +16,12 @@ fn uvarint_known_encodings() {
     assert_eq!(Reader::new(&[0x00]).uvarint().unwrap(), 0);
     assert_eq!(Reader::new(&[0x7f]).uvarint().unwrap(), 127);
     assert_eq!(Reader::new(&[0x80, 0x01]).uvarint().unwrap(), 128);
-    assert_eq!(Reader::new(&[0xff, 0xff, 0xff, 0xff, 0x0f]).uvarint().unwrap(), u32::MAX);
+    assert_eq!(
+        Reader::new(&[0xff, 0xff, 0xff, 0xff, 0x0f])
+            .uvarint()
+            .unwrap(),
+        u32::MAX
+    );
     // non-minimal encodings are accepted, as in Java
     assert_eq!(Reader::new(&[0x80, 0x00]).uvarint().unwrap(), 0);
 }
@@ -31,15 +36,23 @@ fn uvarint_fifth_byte_continuation_is_rejected() {
 #[test]
 fn uvarint_fifth_byte_high_bits_are_strict() {
     let mut r = Reader::new(&[0xff, 0xff, 0xff, 0xff, 0x1f]);
-    assert_eq!(r.uvarint(), Err(SpecError::Strict(Strict::S5VarintHighBits)));
+    assert_eq!(
+        r.uvarint(),
+        Err(SpecError::Strict(Strict::S5VarintHighBits))
+    );
 }
 
 #[test]
 fn uvarlong_limits() {
     let max = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
     assert_eq!(Reader::new(&max).uvarlong().unwrap(), u64::MAX);
-    let too_long = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00];
-    assert_eq!(Reader::new(&too_long).uvarlong(), Err(SpecError::VarintTooLong));
+    let too_long = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00,
+    ];
+    assert_eq!(
+        Reader::new(&too_long).uvarlong(),
+        Err(SpecError::VarintTooLong)
+    );
     let high = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03];
     assert_eq!(
         Reader::new(&high).uvarlong(),
@@ -57,7 +70,10 @@ fn zigzag() {
 #[test]
 fn len_prefix_rules() {
     // int16 -1 on nullable => null
-    assert_eq!(Reader::new(&[0xff, 0xff]).len_prefix(LenKind::Int16, true, "f"), Ok(None));
+    assert_eq!(
+        Reader::new(&[0xff, 0xff]).len_prefix(LenKind::Int16, true, "f"),
+        Ok(None)
+    );
     // int16 -1 on non-nullable => NullNotAllowed
     assert_eq!(
         Reader::new(&[0xff, 0xff]).len_prefix(LenKind::Int16, false, "f"),
@@ -69,9 +85,18 @@ fn len_prefix_rules() {
         Err(SpecError::Strict(Strict::S1NegativeLength))
     );
     // compact: 0 => null, 1 => empty, 4 => 3
-    assert_eq!(Reader::new(&[0x00]).len_prefix(LenKind::Compact, true, "f"), Ok(None));
-    assert_eq!(Reader::new(&[0x01]).len_prefix(LenKind::Compact, true, "f"), Ok(Some(0)));
-    assert_eq!(Reader::new(&[0x04]).len_prefix(LenKind::Compact, false, "f"), Ok(Some(3)));
+    assert_eq!(
+        Reader::new(&[0x00]).len_prefix(LenKind::Compact, true, "f"),
+        Ok(None)
+    );
+    assert_eq!(
+        Reader::new(&[0x01]).len_prefix(LenKind::Compact, true, "f"),
+        Ok(Some(0))
+    );
+    assert_eq!(
+        Reader::new(&[0x04]).len_prefix(LenKind::Compact, false, "f"),
+        Ok(Some(3))
+    );
     // compact raw 0xffffffff => Java int -1, minus 1 => -2 => S1 on nullable
     assert_eq!(
         Reader::new(&[0xff, 0xff, 0xff, 0xff, 0x0f]).len_prefix(LenKind::Compact, true, "f"),

@@ -107,3 +107,16 @@ pub struct MessageSchema {
     pub flexible: Versions,
     pub root: &'static StructSchema,
 }
+pub fn find(api_key: i16, kind: Kind) -> Option<&'static MessageSchema> {
+    crate::generated_schemas::ALL
+        .iter()
+        .copied()
+        .find(|m| m.api_key == Some(api_key) && m.kind == kind)
+}
+
+pub fn find_by_name(name: &str) -> Option<&'static MessageSchema> {
+    crate::generated_schemas::ALL
+        .iter()
+        .copied()
+        .find(|m| m.name == name)
+}

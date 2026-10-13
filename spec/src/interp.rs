@@ -72,11 +72,21 @@ pub fn decode(schema: &MessageSchema, version: i16, input: &[u8]) -> Result<(Str
         return Err(SpecError::UnsupportedVersion(version));
     }
     let mut r = Reader::new(input);
-    let v = read_struct(&mut r, schema.root, version, schema.flexible.contains(version))?;
+    let v = read_struct(
+        &mut r,
+        schema.root,
+        version,
+        schema.flexible.contains(version),
+    )?;
     Ok((v, r.pos()))
 }
 
-fn read_struct(r: &mut Reader<'_>, s: &StructSchema, version: i16, flexible: bool) -> Result<StructValue> {
+fn read_struct(
+    r: &mut Reader<'_>,
+    s: &StructSchema,
+    version: i16,
+    flexible: bool,
+) -> Result<StructValue> {
     let mut slots: Vec<Option<Value>> = vec![None; s.fields.len()];
     for (i, f) in s.fields.iter().enumerate() {
         if f.versions.contains(version) && !is_tagged(f, version) {
@@ -101,7 +111,9 @@ fn read_struct(r: &mut Reader<'_>, s: &StructSchema, version: i16, flexible: boo
                         return Err(SpecError::TagNotValidForVersion(tag));
                     }
                     // Java ignores `size` for known tags; the spec requires the value to fill it exactly.
-                    let body = r.take(size).map_err(|_| SpecError::Strict(Strict::S4TagSize))?;
+                    let body = r
+                        .take(size)
+                        .map_err(|_| SpecError::Strict(Strict::S4TagSize))?;
                     let mut sub = Reader::new(body);
                     let v = read_field(&mut sub, f, version, flexible).map_err(|e| match e {
                         SpecError::Eof => SpecError::Strict(Strict::S4TagSize),
@@ -123,10 +135,18 @@ fn read_struct(r: &mut Reader<'_>, s: &StructSchema, version: i16, flexible: boo
         .filter(|(f, _)| f.versions.contains(version))
         .map(|(f, v)| (f.name, v.unwrap_or_else(|| default_value(f, version))))
         .collect();
-    Ok(StructValue { fields, unknown_tags })
+    Ok(StructValue {
+        fields,
+        unknown_tags,
+    })
 }
 
-fn read_field(r: &mut Reader<'_>, f: &FieldDesc, version: i16, msg_flexible: bool) -> Result<Value> {
+fn read_field(
+    r: &mut Reader<'_>,
+    f: &FieldDesc,
+    version: i16,
+    msg_flexible: bool,
+) -> Result<Value> {
     let flex = field_flexible(f, version, msg_flexible);
     let nullable = f.nullable.contains(version);
     match f.ty {
@@ -136,11 +156,23 @@ fn read_field(r: &mut Reader<'_>, f: &FieldDesc, version: i16, msg_flexible: boo
             if nullable && r.i8()? < 0 {
                 return Ok(Value::Struct(None));
             }
-            Ok(Value::Struct(Some(Box::new(read_struct(r, s, version, msg_flexible)?))))
+            Ok(Value::Struct(Some(Box::new(read_struct(
+                r,
+                s,
+                version,
+                msg_flexible,
+            )?))))
         }
-        FieldType::PrimArray(p) => read_array(r, f.name, flex, nullable, |r| read_prim(r, p, f.name, flex, false)),
+        FieldType::PrimArray(p) => read_array(r, f.name, flex, nullable, |r| {
+            read_prim(r, p, f.name, flex, false)
+        }),
         FieldType::StructArray(s) => read_array(r, f.name, flex, nullable, |r| {
-            Ok(Value::Struct(Some(Box::new(read_struct(r, s, version, msg_flexible)?))))
+            Ok(Value::Struct(Some(Box::new(read_struct(
+                r,
+                s,
+                version,
+                msg_flexible,
+            )?))))
         }),
     }
 }
@@ -152,7 +184,11 @@ fn read_array<'a>(
     nullable: bool,
     mut elem: impl FnMut(&mut Reader<'a>) -> Result<Value>,
 ) -> Result<Value> {
-    let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+    let kind = if flex {
+        LenKind::Compact
+    } else {
+        LenKind::Int32
+    };
     let Some(n) = r.len_prefix(kind, nullable, name)? else {
         return Ok(Value::Array(None));
     };
@@ -166,7 +202,13 @@ fn read_array<'a>(
     Ok(Value::Array(Some(items)))
 }
 
-fn read_prim(r: &mut Reader<'_>, p: Prim, name: &'static str, flex: bool, nullable: bool) -> Result<Value> {
+fn read_prim(
+    r: &mut Reader<'_>,
+    p: Prim,
+    name: &'static str,
+    flex: bool,
+    nullable: bool,
+) -> Result<Value> {
     Ok(match p {
         Prim::Bool => Value::Bool(r.u8()? != 0),
         Prim::Int8 => Value::I8(r.i8()?),
@@ -177,7 +219,11 @@ fn read_prim(r: &mut Reader<'_>, p: Prim, name: &'static str, flex: bool, nullab
         Prim::Float64 => Value::F64(r.u64()?),
         Prim::Uuid => Value::Uuid(r.uuid()?),
         Prim::String => {
-            let kind = if flex { LenKind::Compact } else { LenKind::Int16 };
+            let kind = if flex {
+                LenKind::Compact
+            } else {
+                LenKind::Int16
+            };
             Value::Str(match r.len_prefix(kind, nullable, name)? {
                 None => None,
                 Some(n) if n > 0x7fff => return Err(SpecError::StringTooLong(name)),
@@ -191,7 +237,11 @@ fn read_prim(r: &mut Reader<'_>, p: Prim, name: &'static str, flex: bool, nullab
             })
         }
         Prim::Bytes | Prim::Records => {
-            let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+            let kind = if flex {
+                LenKind::Compact
+            } else {
+                LenKind::Int32
+            };
             let b = match r.len_prefix(kind, nullable, name)? {
                 None => None,
                 Some(n) => Some(r.take(n)?.to_vec()),
@@ -210,7 +260,13 @@ pub fn encode(schema: &MessageSchema, version: i16, value: &StructValue) -> Resu
         return Err(SpecError::UnsupportedVersion(version));
     }
     let mut w = Writer::new();
-    write_struct(&mut w, schema.root, version, schema.flexible.contains(version), value)?;
+    write_struct(
+        &mut w,
+        schema.root,
+        version,
+        schema.flexible.contains(version),
+        value,
+    )?;
     Ok(w.into_bytes())
 }
 
@@ -218,10 +274,28 @@ fn shape(msg: String) -> SpecError {
     SpecError::Shape(msg)
 }
 
-fn write_struct(w: &mut Writer, s: &StructSchema, version: i16, flexible: bool, v: &StructValue) -> Result<()> {
-    let present: Vec<&FieldDesc> = s.fields.iter().filter(|f| f.versions.contains(version)).collect();
-    if present.len() != v.fields.len() || present.iter().zip(&v.fields).any(|(f, (n, _))| f.name != *n) {
-        return Err(shape(format!("{}: fields do not match schema for v{version}", s.name)));
+fn write_struct(
+    w: &mut Writer,
+    s: &StructSchema,
+    version: i16,
+    flexible: bool,
+    v: &StructValue,
+) -> Result<()> {
+    let present: Vec<&FieldDesc> = s
+        .fields
+        .iter()
+        .filter(|f| f.versions.contains(version))
+        .collect();
+    if present.len() != v.fields.len()
+        || present
+            .iter()
+            .zip(&v.fields)
+            .any(|(f, (n, _))| f.name != *n)
+    {
+        return Err(shape(format!(
+            "{}: fields do not match schema for v{version}",
+            s.name
+        )));
     }
     for (f, (_, val)) in present.iter().zip(&v.fields) {
         if !is_tagged(f, version) {
@@ -230,7 +304,10 @@ fn write_struct(w: &mut Writer, s: &StructSchema, version: i16, flexible: bool, 
     }
     if !flexible {
         if !v.unknown_tags.is_empty() {
-            return Err(shape(format!("{}: tagged fields in a non-flexible version", s.name)));
+            return Err(shape(format!(
+                "{}: tagged fields in a non-flexible version",
+                s.name
+            )));
         }
         return Ok(());
     }
@@ -260,7 +337,13 @@ fn null_err(name: &str) -> SpecError {
     shape(format!("{name}: null in a non-nullable field"))
 }
 
-fn write_field(w: &mut Writer, f: &FieldDesc, version: i16, msg_flexible: bool, val: &Value) -> Result<()> {
+fn write_field(
+    w: &mut Writer,
+    f: &FieldDesc,
+    version: i16,
+    msg_flexible: bool,
+    val: &Value,
+) -> Result<()> {
     let flex = field_flexible(f, version, msg_flexible);
     let nullable = f.nullable.contains(version);
     match (f.ty, val) {
@@ -278,15 +361,25 @@ fn write_field(w: &mut Writer, f: &FieldDesc, version: i16, msg_flexible: bool, 
             (false, None) => Err(null_err(f.name)),
         },
         (FieldType::PrimArray(p), Value::Array(items)) => {
-            write_array(w, f.name, flex, nullable, items.as_deref(), |w, e| write_prim(w, p, f.name, flex, false, e))
-        }
-        (FieldType::StructArray(s), Value::Array(items)) => {
-            write_array(w, f.name, flex, nullable, items.as_deref(), |w, e| match e {
-                Value::Struct(Some(sv)) => write_struct(w, s, version, msg_flexible, sv),
-                _ => Err(shape(format!("{}: array element is not a struct", f.name))),
+            write_array(w, f.name, flex, nullable, items.as_deref(), |w, e| {
+                write_prim(w, p, f.name, flex, false, e)
             })
         }
-        _ => Err(shape(format!("{}: value does not match field type", f.name))),
+        (FieldType::StructArray(s), Value::Array(items)) => write_array(
+            w,
+            f.name,
+            flex,
+            nullable,
+            items.as_deref(),
+            |w, e| match e {
+                Value::Struct(Some(sv)) => write_struct(w, s, version, msg_flexible, sv),
+                _ => Err(shape(format!("{}: array element is not a struct", f.name))),
+            },
+        ),
+        _ => Err(shape(format!(
+            "{}: value does not match field type",
+            f.name
+        ))),
     }
 }
 
@@ -298,7 +391,11 @@ fn write_array(
     items: Option<&[Value]>,
     mut elem: impl FnMut(&mut Writer, &Value) -> Result<()>,
 ) -> Result<()> {
-    let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+    let kind = if flex {
+        LenKind::Compact
+    } else {
+        LenKind::Int32
+    };
     match items {
         None if !nullable => Err(null_err(name)),
         None => {
@@ -312,7 +409,13 @@ fn write_array(
     }
 }
 
-fn write_opt_bytes(w: &mut Writer, kind: LenKind, name: &str, nullable: bool, b: Option<&[u8]>) -> Result<()> {
+fn write_opt_bytes(
+    w: &mut Writer,
+    kind: LenKind,
+    name: &str,
+    nullable: bool,
+    b: Option<&[u8]>,
+) -> Result<()> {
     match b {
         None if !nullable => Err(null_err(name)),
         None => {
@@ -327,7 +430,14 @@ fn write_opt_bytes(w: &mut Writer, kind: LenKind, name: &str, nullable: bool, b:
     }
 }
 
-fn write_prim(w: &mut Writer, p: Prim, name: &str, flex: bool, nullable: bool, v: &Value) -> Result<()> {
+fn write_prim(
+    w: &mut Writer,
+    p: Prim,
+    name: &str,
+    flex: bool,
+    nullable: bool,
+    v: &Value,
+) -> Result<()> {
     match (p, v) {
         (Prim::Bool, Value::Bool(b)) => w.u8(u8::from(*b)),
         (Prim::Int8, Value::I8(x)) => w.i8(*x),
@@ -341,11 +451,19 @@ fn write_prim(w: &mut Writer, p: Prim, name: &str, flex: bool, nullable: bool, v
             if s.as_ref().is_some_and(|b| b.len() > 0x7fff) {
                 return Err(SpecError::StringTooLong("<encode>"));
             }
-            let kind = if flex { LenKind::Compact } else { LenKind::Int16 };
+            let kind = if flex {
+                LenKind::Compact
+            } else {
+                LenKind::Int16
+            };
             write_opt_bytes(w, kind, name, nullable, s.as_deref())?;
         }
         (Prim::Bytes, Value::Bytes(b)) | (Prim::Records, Value::Records(b)) => {
-            let kind = if flex { LenKind::Compact } else { LenKind::Int32 };
+            let kind = if flex {
+                LenKind::Compact
+            } else {
+                LenKind::Int32
+            };
             write_opt_bytes(w, kind, name, nullable, b.as_deref())?;
         }
         _ => return Err(shape(format!("{name}: value does not match {p:?}"))),
