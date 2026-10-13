@@ -1,5 +1,5 @@
 use proto_kafka_spec::error::{SpecError, Strict};
-use proto_kafka_spec::interp::decode;
+use proto_kafka_spec::interp::{decode, decode_with, Mode};
 use proto_kafka_spec::schema::*;
 use proto_kafka_spec::value::{StructValue, Value};
 
@@ -286,4 +286,114 @@ fn unsupported_version() {
 #[test]
 fn truncated_input_is_eof() {
     assert_eq!(decode(&TEST, 0, &V0[..V0.len() - 1]), Err(SpecError::Eof));
+}
+
+fn lenient(version: i16, b: &[u8]) -> (StructValue, usize) {
+    decode_with(&TEST, version, b, Mode::JavaLenient).unwrap()
+}
+
+#[test]
+fn java_lenient_negative_length_is_null() {
+    let bytes = [&[0, 0, 0, 7, 0xff, 0xfe][..], &V0[4..]].concat();
+    assert_eq!(lenient(1, &bytes).0.get("Note"), Some(&Value::Str(None)));
+}
+
+/// Java: `new String(arr, UTF_8)` accepts invalid UTF-8; JavaLenient keeps the raw bytes.
+#[test]
+fn java_lenient_keeps_invalid_utf8_bytes() {
+    let mut bytes = V0.to_vec();
+    bytes[10] = 0xff;
+    let (v, n) = lenient(0, &bytes);
+    assert_eq!(n, bytes.len());
+    let Some(Value::Array(Some(topics))) = v.get("Topics") else {
+        panic!()
+    };
+    let Value::Struct(Some(t)) = &topics[0] else {
+        panic!()
+    };
+    assert_eq!(t.get("Name"), Some(&s(&[0xff])));
+}
+
+/// Java's tag loop has no order check; a repeated known tag overwrites (last write wins).
+#[test]
+fn java_lenient_duplicate_known_tag_last_write_wins() {
+    let bytes = [
+        V2_BODY,
+        &[0x02, 0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 5],
+        &[0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 6],
+    ]
+    .concat();
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::Strict(Strict::S3TagOrder))
+    );
+    let (v, n) = lenient(2, &bytes);
+    assert_eq!((v.get("Hint"), n), (Some(&Value::I64(6)), bytes.len()));
+}
+
+/// Java reads a known tag's value from the main stream and ignores `_size`.
+#[test]
+fn java_lenient_known_tag_ignores_size() {
+    let bytes = [V2_BODY, &[0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 5]].concat();
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::Strict(Strict::S4TagSize))
+    );
+    let (v, n) = lenient(2, &bytes);
+    assert_eq!((v.get("Hint"), n), (Some(&Value::I64(5)), bytes.len()));
+}
+
+/// Java: `int _numTaggedFields = readUnsignedVarint()`; 0x80000000 is negative, so the
+/// loop runs zero times. Strict: S7.
+#[test]
+fn tag_count_at_or_above_2_pow_31() {
+    let bytes = [V2_BODY, &[0x80, 0x80, 0x80, 0x80, 0x08]].concat();
+    assert_eq!(
+        decode(&TEST, 2, &bytes),
+        Err(SpecError::Strict(Strict::S7TagCountOverflow))
+    );
+    let (v, n) = lenient(2, &bytes);
+    assert_eq!((v.get("Hint"), n), (Some(&Value::I64(-1)), bytes.len()));
+    // 2^31 - 1 is a valid (non-negative) Java count: the loop runs and hits Eof.
+    let max = [V2_BODY, &[0xff, 0xff, 0xff, 0xff, 0x07]].concat();
+    assert_eq!(decode(&TEST, 2, &max), Err(SpecError::Eof));
+}
+
+static TAGGED_ARRAY_ROOT: StructSchema = StructSchema {
+    name: "TaggedArray",
+    fields: &[FieldDesc {
+        name: "Ids",
+        ty: FieldType::PrimArray(Prim::Int32),
+        versions: Versions::since(0),
+        tag: Some(0),
+        tagged: Versions::since(0),
+        ..FieldDesc::DEFAULT
+    }],
+};
+
+static TAGGED_ARRAY: MessageSchema = MessageSchema {
+    name: "TaggedArray",
+    api_key: None,
+    kind: Kind::Data,
+    valid: Versions::range(0, 0),
+    flexible: Versions::since(0),
+    root: &TAGGED_ARRAY_ROOT,
+};
+
+/// Java checks an array length against the whole buffer's remaining bytes, not the tag's
+/// declared size. An array that overruns the window but fits the buffer is accepted by
+/// Java (and JavaLenient), so the strict rejection must be S4, not ArrayTooLong.
+#[test]
+fn array_too_long_inside_known_tag_window_is_s4() {
+    let bytes = [0x01, 0x00, 0x02, 0x03, 0, 0, 0, 1, 0, 0, 0, 2];
+    assert_eq!(
+        decode(&TAGGED_ARRAY, 0, &bytes),
+        Err(SpecError::Strict(Strict::S4TagSize))
+    );
+    let (v, n) = decode_with(&TAGGED_ARRAY, 0, &bytes, Mode::JavaLenient).unwrap();
+    assert_eq!(n, bytes.len());
+    assert_eq!(
+        v.get("Ids"),
+        Some(&Value::Array(Some(vec![Value::I32(1), Value::I32(2)])))
+    );
 }

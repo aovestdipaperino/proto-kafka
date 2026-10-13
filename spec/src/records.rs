@@ -3,6 +3,7 @@
 //! DefaultRecordBatch, DefaultRecord and LegacyRecord. Compressed payloads are opaque.
 
 use crate::error::{Result, SpecError, Strict};
+pub use crate::wire::Mode;
 use crate::wire::Reader;
 
 const LOG_OVERHEAD: usize = 12; // offset (8) + size (4)
@@ -78,7 +79,15 @@ fn err(msg: impl Into<String>) -> SpecError {
     SpecError::Records(msg.into())
 }
 
+/// Strict decode: the reference semantics.
 pub fn decode(input: &[u8]) -> Result<RecordSet> {
+    decode_with(input, Mode::Strict)
+}
+
+/// Decode in the given mode. `Mode::JavaLenient` accepts what Java's `MemoryRecords`
+/// path accepts on uncompressed data (negative key/value lengths are null, header keys
+/// are not UTF-8 checked, final varint byte high bits are dropped).
+pub fn decode_with(input: &[u8], mode: Mode) -> Result<RecordSet> {
     let mut entries = Vec::new();
     let mut pos = 0;
     loop {
@@ -114,19 +123,19 @@ pub fn decode(input: &[u8]) -> Result<RecordSet> {
         }
         let frame = &rest[..total];
         entries.push(if magic == 2 {
-            Entry::V2(decode_v2(frame)?)
+            Entry::V2(decode_v2(frame, mode)?)
         } else {
-            Entry::Legacy(decode_legacy(frame)?)
+            Entry::Legacy(decode_legacy(frame, mode)?)
         });
         pos += total;
     }
 }
 
-fn decode_v2(frame: &[u8]) -> Result<Batch> {
+fn decode_v2(frame: &[u8], mode: Mode) -> Result<Batch> {
     if frame.len() < V2_BATCH_OVERHEAD {
         return Err(err("v2 batch smaller than batch overhead"));
     }
-    let mut r = Reader::new(frame);
+    let mut r = Reader::with_mode(frame, mode);
     let base_offset = r.i64()?;
     let _batch_length = r.i32()?;
     let partition_leader_epoch = r.i32()?;
@@ -182,11 +191,12 @@ fn decode_v2(frame: &[u8]) -> Result<Batch> {
     })
 }
 
-/// varint length; -1 = null; < -1 = Strict S1 (Java: null).
+/// varint length; -1 = null; < -1 = Strict S1 (Java `Utils.readBytes`: null).
 fn opt_bytes(r: &mut Reader<'_>) -> Result<Option<Vec<u8>>> {
     match r.varint()? {
         -1 => Ok(None),
-        n if n < 0 => Err(SpecError::Strict(Strict::S1NegativeLength)),
+        n if n < 0 && r.strict() => Err(SpecError::Strict(Strict::S1NegativeLength)),
+        n if n < 0 => Ok(None),
         n => Ok(Some(r.take(n as usize)?.to_vec())),
     }
 }
@@ -199,7 +209,7 @@ fn decode_record(r: &mut Reader<'_>) -> Result<Record> {
     let body = r
         .take(size as usize)
         .map_err(|_| err("record size exceeds remaining bytes"))?;
-    let mut b = Reader::new(body);
+    let mut b = Reader::with_mode(body, r.mode());
     let attributes = b.i8()?;
     let timestamp_delta = b.varlong()?;
     let offset_delta = b.varint()?;
@@ -216,8 +226,8 @@ fn decode_record(r: &mut Reader<'_>) -> Result<Record> {
             return Err(err("null header key"));
         }
         let key = b.take(klen as usize)?;
-        // Java decodes header keys as lossy UTF-8.
-        if core::str::from_utf8(key).is_err() {
+        // Java decodes header keys as lossy UTF-8 (Utils.utf8).
+        if b.strict() && core::str::from_utf8(key).is_err() {
             return Err(SpecError::Strict(Strict::S2InvalidUtf8));
         }
         headers.push(RecordHeader {
@@ -238,17 +248,18 @@ fn decode_record(r: &mut Reader<'_>) -> Result<Record> {
     })
 }
 
-/// int32 length; -1 = null; < -1 = Strict S1 (Java: null).
+/// int32 length; -1 = null; < -1 = Strict S1 (Java `Utils.sizeDelimited`: null).
 fn legacy_bytes(r: &mut Reader<'_>) -> Result<Option<Vec<u8>>> {
     match r.i32()? {
         -1 => Ok(None),
-        n if n < 0 => Err(SpecError::Strict(Strict::S1NegativeLength)),
+        n if n < 0 && r.strict() => Err(SpecError::Strict(Strict::S1NegativeLength)),
+        n if n < 0 => Ok(None),
         n => Ok(Some(r.take(n as usize)?.to_vec())),
     }
 }
 
-fn decode_legacy(frame: &[u8]) -> Result<LegacyMessage> {
-    let mut r = Reader::new(frame);
+fn decode_legacy(frame: &[u8], mode: Mode) -> Result<LegacyMessage> {
+    let mut r = Reader::with_mode(frame, mode);
     let offset = r.i64()?;
     let _size = r.i32()?;
     let crc = r.u32()?;

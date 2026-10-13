@@ -14,6 +14,9 @@ pub enum Strict {
     S5VarintHighBits,
     // S6 (unknown record batch magic) was retracted: Java's MemoryRecords path rejects
     // magic outside 0..=2, so the spec rejects it with SpecError::Records. See FINDINGS.
+    /// Tagged-field count >= 2^31. Java holds it in an `int`, so it is negative and the
+    /// read loop runs zero times (the section is accepted as empty).
+    S7TagCountOverflow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

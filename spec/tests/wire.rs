@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use proto_kafka_spec::error::{SpecError, Strict};
-use proto_kafka_spec::wire::{LenKind, Reader, Writer};
+use proto_kafka_spec::wire::{LenKind, Mode, Reader, Writer};
 
 #[test]
 fn fixed_width_big_endian() {
@@ -132,4 +132,37 @@ proptest! {
         let b = w.into_bytes();
         prop_assert_eq!(Reader::new(&b).varlong().unwrap(), x);
     }
+}
+
+/// Java ByteUtils.readUnsignedVarint: `tmp << 28` drops bits 4..6 of the 5th byte;
+/// readUnsignedVarlong: `b << 63` keeps only bit 0 of the 10th byte.
+#[test]
+fn java_lenient_drops_final_varint_high_bits() {
+    let lenient = |b: &'static [u8]| Reader::with_mode(b, Mode::JavaLenient);
+    assert_eq!(
+        lenient(&[0xff, 0xff, 0xff, 0xff, 0x1f]).uvarint(),
+        Ok(u32::MAX)
+    );
+    assert_eq!(
+        lenient(&[0xff, 0xff, 0xff, 0xff, 0x8f, 0x00]).uvarint(),
+        Err(SpecError::VarintTooLong)
+    );
+    assert_eq!(
+        lenient(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03]).uvarlong(),
+        Ok(u64::MAX)
+    );
+}
+
+/// Java MessageDataGenerator: `if (length < 0)` => null for nullable, else throw.
+#[test]
+fn java_lenient_any_negative_length_is_null() {
+    let b = [0xff, 0xff, 0xff, 0xfe];
+    assert_eq!(
+        Reader::with_mode(&b, Mode::JavaLenient).len_prefix(LenKind::Int32, true, "f"),
+        Ok(None)
+    );
+    assert_eq!(
+        Reader::with_mode(&b, Mode::JavaLenient).len_prefix(LenKind::Int32, false, "f"),
+        Err(SpecError::NullNotAllowed("f"))
+    );
 }

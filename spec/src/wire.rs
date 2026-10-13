@@ -14,14 +14,42 @@ pub enum LenKind {
     Compact,
 }
 
+/// Decoding mode.
+///
+/// `Strict` is the reference spec: it rejects, with `SpecError::Strict(_)`, the malformed
+/// inputs listed in docs/FINDINGS.md that Java accepts. `JavaLenient` reproduces Java's
+/// acceptance exactly on those inputs (any negative length is null, final varint byte high
+/// bits are dropped, invalid UTF-8 is kept as raw bytes, tagged fields are read as Java
+/// reads them). It exists so the golden tests can check every Java-accepted vector against
+/// Java's value; it is not the reference semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    #[default]
+    Strict,
+    JavaLenient,
+}
+
 pub struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
+    mode: Mode,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        Reader { buf, pos: 0 }
+        Self::with_mode(buf, Mode::Strict)
+    }
+
+    pub fn with_mode(buf: &'a [u8], mode: Mode) -> Self {
+        Reader { buf, pos: 0, mode }
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    pub fn strict(&self) -> bool {
+        self.mode == Mode::Strict
     }
 
     pub fn pos(&self) -> usize {
@@ -76,7 +104,7 @@ impl<'a> Reader<'a> {
     }
 
     /// At most 5 bytes. 5th byte: continuation => VarintTooLong (Java),
-    /// bits 4..6 set => Strict S5 (Java drops them).
+    /// bits 4..6 set => Strict S5 (Java drops them; so does `JavaLenient`).
     pub fn uvarint(&mut self) -> Result<u32> {
         let mut result: u32 = 0;
         for i in 0..5 {
@@ -85,10 +113,11 @@ impl<'a> Reader<'a> {
                 if b & 0x80 != 0 {
                     return Err(SpecError::VarintTooLong);
                 }
-                if b & 0x70 != 0 {
+                if b & 0x70 != 0 && self.strict() {
                     return Err(SpecError::Strict(Strict::S5VarintHighBits));
                 }
             }
+            // On the 5th byte, bits 4..6 shift out of the u32, as Java's `tmp << 28` drops them.
             result |= u32::from(b & 0x7f) << (7 * i);
             if b & 0x80 == 0 {
                 return Ok(result);
@@ -106,7 +135,7 @@ impl<'a> Reader<'a> {
                 if b & 0x80 != 0 {
                     return Err(SpecError::VarintTooLong);
                 }
-                if b & 0x7e != 0 {
+                if b & 0x7e != 0 && self.strict() {
                     return Err(SpecError::Strict(Strict::S5VarintHighBits));
                 }
             }
@@ -129,7 +158,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Reads a length prefix. `None` is null. Java treats every negative length as
-    /// null; the spec accepts only -1 (anything else is Strict S1).
+    /// null; the strict spec accepts only -1 (anything else is Strict S1).
     pub fn len_prefix(
         &mut self,
         kind: LenKind,
@@ -146,7 +175,7 @@ impl<'a> Reader<'a> {
             if !nullable {
                 return Err(SpecError::NullNotAllowed(field));
             }
-            if len != -1 {
+            if len != -1 && self.strict() {
                 return Err(SpecError::Strict(Strict::S1NegativeLength));
             }
             return Ok(None);

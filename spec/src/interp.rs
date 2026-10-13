@@ -4,6 +4,7 @@
 use crate::error::{Result, SpecError, Strict};
 use crate::schema::{DefaultVal, FieldDesc, FieldType, MessageSchema, Prim, StructSchema};
 use crate::value::{StructValue, Value};
+pub use crate::wire::Mode;
 use crate::wire::{LenKind, Reader, Writer};
 
 pub fn is_tagged(f: &FieldDesc, version: i16) -> bool {
@@ -67,11 +68,23 @@ fn prim_default(p: Prim, d: DefaultVal) -> Value {
     }
 }
 
+/// Strict decode: the reference semantics. Returns the value and the bytes consumed.
 pub fn decode(schema: &MessageSchema, version: i16, input: &[u8]) -> Result<(StructValue, usize)> {
+    decode_with(schema, version, input, Mode::Strict)
+}
+
+/// Decode in the given mode. `Mode::JavaLenient` accepts what Java's generated
+/// `*Data(Readable, short)` constructors accept (see `Mode`).
+pub fn decode_with(
+    schema: &MessageSchema,
+    version: i16,
+    input: &[u8],
+    mode: Mode,
+) -> Result<(StructValue, usize)> {
     if !schema.valid.contains(version) {
         return Err(SpecError::UnsupportedVersion(version));
     }
-    let mut r = Reader::new(input);
+    let mut r = Reader::with_mode(input, mode);
     let v = read_struct(
         &mut r,
         schema.root,
@@ -95,12 +108,20 @@ fn read_struct(
     }
     let mut unknown_tags = Vec::new();
     if flexible {
-        let count = r.uvarint()?;
+        // Java: `int _numTaggedFields = readUnsignedVarint()`; a count >= 2^31 is negative
+        // and the loop `for (_i = 0; _i < _numTaggedFields; _i++)` runs zero times.
+        let count = match r.uvarint()? {
+            n if n > i32::MAX as u32 && r.strict() => {
+                return Err(SpecError::Strict(Strict::S7TagCountOverflow))
+            }
+            n if n > i32::MAX as u32 => 0,
+            n => n,
+        };
         let mut last: Option<u32> = None;
         for _ in 0..count {
             let tag = r.uvarint()?;
             let size = r.uvarint()? as usize;
-            if last.is_some_and(|l| tag <= l) {
+            if r.strict() && last.is_some_and(|l| tag <= l) {
                 return Err(SpecError::Strict(Strict::S3TagOrder));
             }
             last = Some(tag);
@@ -110,19 +131,13 @@ fn read_struct(
                     if !(f.versions.contains(version) && is_tagged(f, version)) {
                         return Err(SpecError::TagNotValidForVersion(tag));
                     }
-                    // Java ignores `size` for known tags; the spec requires the value to fill it exactly.
-                    let body = r
-                        .take(size)
-                        .map_err(|_| SpecError::Strict(Strict::S4TagSize))?;
-                    let mut sub = Reader::new(body);
-                    let v = read_field(&mut sub, f, version, flexible).map_err(|e| match e {
-                        SpecError::Eof => SpecError::Strict(Strict::S4TagSize),
-                        e => e,
-                    })?;
-                    if sub.remaining() != 0 {
-                        return Err(SpecError::Strict(Strict::S4TagSize));
-                    }
-                    slots[i] = Some(v);
+                    slots[i] = Some(if r.strict() {
+                        read_tagged_window(r, f, version, flexible, size)?
+                    } else {
+                        // Java reads a known tag's value from the main stream and ignores
+                        // `_size`; a duplicated tag overwrites (last write wins).
+                        read_field(r, f, version, flexible)?
+                    });
                 }
                 None => unknown_tags.push((tag, r.take(size)?.to_vec())),
             }
@@ -139,6 +154,30 @@ fn read_struct(
         fields,
         unknown_tags,
     })
+}
+
+/// Strict: a known tag's value must exactly fill its declared `size` (else S4). Java checks
+/// lengths against the whole buffer, so running out of the window (Eof, or an array length
+/// above the window's remaining bytes) is also S4 rather than a Java-equivalent error.
+fn read_tagged_window(
+    r: &mut Reader<'_>,
+    f: &FieldDesc,
+    version: i16,
+    flexible: bool,
+    size: usize,
+) -> Result<Value> {
+    let body = r
+        .take(size)
+        .map_err(|_| SpecError::Strict(Strict::S4TagSize))?;
+    let mut sub = Reader::with_mode(body, r.mode());
+    let v = read_field(&mut sub, f, version, flexible).map_err(|e| match e {
+        SpecError::Eof | SpecError::ArrayTooLong(_) => SpecError::Strict(Strict::S4TagSize),
+        e => e,
+    })?;
+    if sub.remaining() != 0 {
+        return Err(SpecError::Strict(Strict::S4TagSize));
+    }
+    Ok(v)
 }
 
 fn read_field(
@@ -229,7 +268,9 @@ fn read_prim(
                 Some(n) if n > 0x7fff => return Err(SpecError::StringTooLong(name)),
                 Some(n) => {
                     let b = r.take(n)?;
-                    if core::str::from_utf8(b).is_err() {
+                    // Java decodes with `new String(arr, UTF_8)` (lossy U+FFFD); JavaLenient
+                    // keeps the raw bytes.
+                    if r.strict() && core::str::from_utf8(b).is_err() {
                         return Err(SpecError::Strict(Strict::S2InvalidUtf8));
                     }
                     Some(b.to_vec())

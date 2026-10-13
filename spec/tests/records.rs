@@ -1,5 +1,5 @@
 use proto_kafka_spec::error::{SpecError, Strict};
-use proto_kafka_spec::records::{decode, Entry, Payload};
+use proto_kafka_spec::records::{decode, decode_with, Entry, Mode, Payload};
 use proto_kafka_spec::wire::Writer;
 
 fn opt(w: &mut Writer, b: Option<&[u8]>) {
@@ -437,4 +437,38 @@ fn record_body_size_mismatch_is_rejected() {
         only_record(&v2_batch(&[raw_record(&ok.into_bytes())])).key,
         None
     );
+}
+
+/// JavaLenient: negative record/legacy lengths are null, header keys are not UTF-8 checked.
+#[test]
+fn java_lenient_record_lengths_and_header_keys() {
+    let mut body = record_prefix();
+    body.varint(-2);
+    body.varint(-7);
+    body.varint(1);
+    body.varint(2);
+    body.bytes(&[0xff, 0xfe]);
+    body.varint(-3);
+    let b = v2_batch(&[raw_record(&body.into_bytes())]);
+    let set = decode_with(&b, Mode::JavaLenient).unwrap();
+    let Entry::V2(batch) = &set.entries[0] else {
+        panic!()
+    };
+    let Payload::Records(recs) = &batch.payload else {
+        panic!()
+    };
+    assert_eq!((recs[0].key.clone(), recs[0].value.clone()), (None, None));
+    assert_eq!(recs[0].headers[0].key, vec![0xff, 0xfe]);
+    assert_eq!(recs[0].headers[0].value, None);
+
+    let mut legacy_body = Writer::new();
+    legacy_body.i8(0);
+    legacy_body.i8(0);
+    legacy_body.i32(-2);
+    legacy_body.i32(-9);
+    let b = legacy_frame(legacy_body.into_bytes());
+    let Entry::Legacy(m) = &decode_with(&b, Mode::JavaLenient).unwrap().entries[0] else {
+        panic!()
+    };
+    assert_eq!((m.key.clone(), m.value.clone()), (None, None));
 }

@@ -13,6 +13,12 @@ Classified differences found by verification. Source of truth: Kafka 4.1.0 Java
 | S4 | Known tagged field value length != declared size | size ignored | reject | `S4TagSize` |
 | S5 | Final varint/varlong byte with bits Java drops | dropped | reject | `S5VarintHighBits` |
 | ~~S6~~ | Record batch magic not in {0,1,2} | **rejected** (`Invalid magic found in record`) | reject (`SpecError::Records`) | retracted, see below |
+| S7 | Tagged-field count >= 2^31 | `int` count is negative, loop skipped: accepted as empty | reject | `S7TagCountOverflow` |
+
+S4 includes an array inside a known tag that overruns the tag's `size` window (Java checks
+array lengths against the whole buffer). `Mode::JavaLenient` (`interp::decode_with`,
+`records::decode_with`) accepts every S1-S5/S7 input exactly as Java does; the golden tests
+use it to check Java's value on every Java-accepted vector.
 
 S6 was retracted in Task 7. Java's wire path (`MemoryRecords.batches()` ->
 `ByteBufferLogInputStream.nextBatchSize`, `ByteBufferLogInputStream.java:79-84`) throws

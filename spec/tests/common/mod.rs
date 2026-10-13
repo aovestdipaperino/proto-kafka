@@ -74,7 +74,8 @@ pub fn json_struct(s: &StructSchema, version: i16, j: &J) -> StructValue {
                 .iter()
                 .map(|t| {
                     (
-                        t["tag"].as_u64().unwrap() as u32,
+                        // Java's tag is an `int`: tags >= 2^31 appear negative.
+                        t["tag"].as_i64().unwrap() as u32,
                         hex(t["data"].as_str().unwrap()),
                     )
                 })
@@ -123,8 +124,43 @@ fn json_prim(p: Prim, n: &J) -> Value {
                 .try_into()
                 .unwrap(),
         ),
-        Prim::String => Value::Str(n.as_str().map(|s| s.as_bytes().to_vec())),
-        Prim::Bytes => Value::Bytes(n.as_str().map(|s| STANDARD.decode(s).unwrap())),
-        Prim::Records => Value::Records(n.as_str().map(hex)),
+        Prim::String => Value::Str(json_opt_str(n).map(|s| s.as_bytes().to_vec())),
+        Prim::Bytes => Value::Bytes(json_opt_str(n).map(|s| STANDARD.decode(s).unwrap())),
+        Prim::Records => Value::Records(json_opt_str(n).map(hex)),
     }
+}
+
+/// JSON null => None, JSON string => Some; anything else is a generator bug.
+fn json_opt_str(n: &J) -> Option<&str> {
+    match n {
+        J::Null => None,
+        J::String(s) => Some(s),
+        other => panic!("expected string or null, got {other}"),
+    }
+}
+
+/// Replaces every string's bytes by their lossy UTF-8 decoding (U+FFFD), as Java's
+/// `new String(bytes, UTF_8)` does. Used only to compare a `JavaLenient` decode, which
+/// keeps invalid UTF-8 raw, with Java's JSON.
+pub fn lossy_struct(v: &StructValue) -> StructValue {
+    StructValue {
+        fields: v.fields.iter().map(|(n, f)| (*n, lossy(f))).collect(),
+        unknown_tags: v.unknown_tags.clone(),
+    }
+}
+
+fn lossy(v: &Value) -> Value {
+    match v {
+        Value::Str(Some(b)) => {
+            Value::Str(Some(String::from_utf8_lossy(b).into_owned().into_bytes()))
+        }
+        Value::Array(Some(items)) => Value::Array(Some(items.iter().map(lossy).collect())),
+        Value::Struct(Some(s)) => Value::Struct(Some(Box::new(lossy_struct(s)))),
+        other => other.clone(),
+    }
+}
+
+/// Golden origins other than Java's own valid output.
+pub fn is_mutated(origin: &str) -> bool {
+    origin.starts_with("mutated")
 }

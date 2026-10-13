@@ -124,6 +124,32 @@ Deliberately stricter cases so far:
 | S4 | Known tagged field whose value length ≠ declared `size` | accepted (size ignored) | reject |
 | S5 | 5th varint byte with bits 4–6 set (or 10th varlong byte > 0x01) | bits dropped | reject |
 | ~~S6~~ | Record batch magic byte other than 0/1/2 | **retracted**: Java's wire path rejects it (see Phase 1 results) | reject (not Strict) |
+| S7 | Tagged-field count >= 2^31 | `int _numTaggedFields` is negative, loop runs zero times: accepted as empty | reject |
+
+S4 also covers a known tag whose value runs past its declared `size` window, including an
+array whose length exceeds the window but not the whole buffer: Java checks
+`arrayLength > _readable.remaining()` against the whole buffer
+(`MessageDataGenerator.java:653-657`), so the strict spec reports S4 there, not
+`ArrayTooLong`. **verified**
+
+S7 source: `MessageDataGenerator.java:478-479` emits `int _numTaggedFields =
+_readable.readUnsignedVarint(); for (int _i = 0; _i < _numTaggedFields; _i++)`, and
+`ByteUtils.readUnsignedVarint` (`ByteUtils.java:159-181`) returns the raw 32 bits as an
+`int`. Test: `spec/tests/interp_decode.rs::tag_count_at_or_above_2_pow_31`. **verified**
+
+### Java-lenient decode mode
+
+`interp::decode_with(.., Mode::JavaLenient)` and `records::decode_with(.., Mode::JavaLenient)`
+reproduce Java's acceptance on exactly the S1-S5 and S7 inputs: any negative length is null
+on a nullable field (`Utils.readBytes` / `Utils.sizeDelimited` for records), the final varint
+byte's extra bits are dropped (`ByteUtils.readUnsignedVarint` `tmp << 28`,
+`readUnsignedVarlong` `b << i`, `ByteUtils.java:159-181, 299-311`), invalid UTF-8 is kept as
+raw bytes (Java: lossy `new String(.., UTF_8)`, `Readable.java:51-54`), tagged fields are read
+in any order with last-write-wins for known tags and the known tag's value read from the main
+stream with `_size` ignored (`MessageDataGenerator.java:478-528`), and a tag count >= 2^31 is
+an empty section. `decode` stays strict and is the reference semantics; the lenient mode
+exists so the golden tests can compare every Java-accepted vector with Java's value. Unit
+tests: `java_lenient_*` in `spec/tests/{wire,interp_decode,records}.rs`. **verified**
 
 ## Phase 1 results (golden conformance)
 
