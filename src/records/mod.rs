@@ -956,7 +956,8 @@ fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<B
         });
     }
     let num_headers = num_headers as usize;
-    let mut headers = IndexMap::with_capacity(num_headers);
+    // Each header takes at least 2 bytes, so the remaining length bounds the count (D5).
+    let mut headers = IndexMap::with_capacity(num_headers.min(buf.remaining()));
     for _ in 0..num_headers {
         let key_len: i32 = types::VarInt.decode(buf)?;
         if key_len < 0 {

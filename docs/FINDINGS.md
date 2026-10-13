@@ -53,6 +53,25 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
   `src/kafka/admin.rs` CreateTopics responses, librdkafka compatibility) must set
   `.with_error_message(None)` explicitly, as Java's broker does.
 
+### D3. Compact strings longer than 0x7fff were accepted (crate bug)
+- Crate `CompactString` decoders read any compact length; Java's generated readers throw
+  "string field X had invalid length" above 0x7fff (`MessageDataGenerator.java:632`). **Fixed (Phase 2, Task 4).**
+
+### D4. Nullable struct marker misread (crate bug)
+- Crate `OptionStruct` decoded `Some` only for marker `1`; Java reads the struct for any
+  non-negative marker (`readByte() < 0` is null, `MessageDataGenerator.java:549`). A marker
+  of `0` made the crate return `None` and misparse the struct's bytes as the next field.
+  **Fixed (Phase 2, Task 4).**
+
+### D5. Hostile lengths caused unbounded pre-allocation (crate bug, DoS)
+- `Array`/`CompactArray` called `Vec::with_capacity(n)` with an attacker-controlled `n`
+  (up to ~2^32) before reading; `String`/`Bytes` `Vec` decoders allocated `vec![0; n]`
+  before checking the buffer; record header decoding called `IndexMap::with_capacity` on the
+  declared count. A single request could make the broker abort on allocation failure. Java
+  guards arrays with `length > remaining` (`MessageDataGenerator.java:656`). **Fixed (Phase 2, Task 4):**
+  arrays are bounded by remaining bytes, as Java does; byte and string reads check the buffer
+  before copying; header capacity is capped at the remaining bytes.
+
 ### Other varint decoders (Phase 5 scope)
 
 - `src/records/raw.rs:70-82` (`decode_varint`, protobuf-style u64): rejects a 10th-byte

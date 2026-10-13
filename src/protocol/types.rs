@@ -115,6 +115,29 @@ fn read_varint<B: ByteBuf>(buf: &mut B, max_bytes: u32) -> Result<u64> {
     }
 }
 
+fn decode_len_i16<B: ByteBuf>(buf: &mut B, field: &'static str) -> Result<Option<usize>> {
+    let raw: i16 = Int16.decode(buf)?;
+    primitives::interpret_len(i32::from(raw)).map_err(|e| ProtoError::from_prim(e, field))
+}
+
+fn decode_len_i32<B: ByteBuf>(buf: &mut B, field: &'static str) -> Result<Option<usize>> {
+    let raw: i32 = Int32.decode(buf)?;
+    primitives::interpret_len(raw).map_err(|e| ProtoError::from_prim(e, field))
+}
+
+fn decode_len_compact<B: ByteBuf>(buf: &mut B, field: &'static str) -> Result<Option<usize>> {
+    let raw: u32 = UnsignedVarInt.decode(buf)?;
+    primitives::interpret_len(primitives::compact_len(raw)).map_err(|e| ProtoError::from_prim(e, field))
+}
+
+fn check_string(len: usize, field: &'static str) -> Result<()> {
+    primitives::check_string_len(len).map_err(|e| ProtoError::from_prim(e, field))
+}
+
+fn check_array<B: ByteBuf>(len: usize, field: &'static str, buf: &B) -> Result<()> {
+    primitives::check_array_len(len, buf.remaining()).map_err(|e| ProtoError::from_prim(e, field))
+}
+
 /// An unsigned zigzag encoded int.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct UnsignedVarInt;
@@ -337,33 +360,18 @@ impl<T: NewType<StrBytes>> Encoder<&T> for String {
 
 impl Decoder<Option<StdString>> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<StdString>> {
-        match Int16.decode(buf)? {
-            -1 => Ok(None),
-            n if n >= 0 => {
-                let mut strbuf = vec![0; n as usize];
-                buf.try_copy_to_slice(&mut strbuf)?;
-                Ok(Some(std::string::String::from_utf8(strbuf)?))
-            }
-            n => Err(ProtoError::NegativeLength {
-                field: "string length",
-                value: n as i64,
-            }),
+        match decode_len_i16(buf, "string length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(StdString::from_utf8(buf.try_get_bytes(n)?.to_vec())?)),
         }
     }
 }
 
 impl<T: NewType<StrBytes>> Decoder<Option<T>> for String {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<T>> {
-        match Int16.decode(buf)? {
-            -1 => Ok(None),
-            n if n >= 0 => {
-                let strbuf = StrBytes::try_from(buf.try_get_bytes(n as usize)?)?;
-                Ok(Some(strbuf.into()))
-            }
-            n => Err(ProtoError::NegativeLength {
-                field: "string length",
-                value: n as i64,
-            }),
+        match decode_len_i16(buf, "string length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(StrBytes::try_from(buf.try_get_bytes(n)?)?.into())),
         }
     }
 }
@@ -499,12 +507,11 @@ impl<T: NewType<StrBytes>> Encoder<&T> for CompactString {
 
 impl Decoder<Option<StdString>> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<StdString>> {
-        match UnsignedVarInt.decode(buf)? {
-            0 => Ok(None),
-            n => {
-                let mut strbuf = vec![0; (n - 1) as usize];
-                buf.try_copy_to_slice(&mut strbuf)?;
-                Ok(Some(std::string::String::from_utf8(strbuf)?))
+        match decode_len_compact(buf, "compact string length")? {
+            None => Ok(None),
+            Some(n) => {
+                check_string(n, "compact string length")?;
+                Ok(Some(StdString::from_utf8(buf.try_get_bytes(n)?.to_vec())?))
             }
         }
     }
@@ -512,11 +519,11 @@ impl Decoder<Option<StdString>> for CompactString {
 
 impl<T: NewType<StrBytes>> Decoder<Option<T>> for CompactString {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<T>> {
-        match UnsignedVarInt.decode(buf)? {
-            0 => Ok(None),
-            n => {
-                let strbuf = StrBytes::try_from(buf.try_get_bytes((n - 1) as usize)?)?;
-                Ok(Some(strbuf.into()))
+        match decode_len_compact(buf, "compact string length")? {
+            None => Ok(None),
+            Some(n) => {
+                check_string(n, "compact string length")?;
+                Ok(Some(StrBytes::try_from(buf.try_get_bytes(n)?)?.into()))
             }
         }
     }
@@ -664,30 +671,18 @@ impl Encoder<&bytes::Bytes> for Bytes {
 
 impl Decoder<Option<Vec<u8>>> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<Vec<u8>>> {
-        match Int32.decode(buf)? {
-            -1 => Ok(None),
-            n if n >= 0 => {
-                let mut data = vec![0; n as usize];
-                buf.try_copy_to_slice(&mut data)?;
-                Ok(Some(data))
-            }
-            n => Err(ProtoError::NegativeLength {
-                field: "data length",
-                value: n as i64,
-            }),
+        match decode_len_i32(buf, "data length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(buf.try_get_bytes(n)?.to_vec())),
         }
     }
 }
 
 impl Decoder<Option<bytes::Bytes>> for Bytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<bytes::Bytes>> {
-        match Int32.decode(buf)? {
-            -1 => Ok(None),
-            n if n >= 0 => Ok(Some(buf.try_get_bytes(n as usize)?)),
-            n => Err(ProtoError::NegativeLength {
-                field: "data length",
-                value: n as i64,
-            }),
+        match decode_len_i32(buf, "data length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(buf.try_get_bytes(n)?)),
         }
     }
 }
@@ -836,22 +831,18 @@ impl Encoder<&bytes::Bytes> for CompactBytes {
 
 impl Decoder<Option<Vec<u8>>> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<Vec<u8>>> {
-        match UnsignedVarInt.decode(buf)? {
-            0 => Ok(None),
-            n => {
-                let mut data = vec![0; (n - 1) as usize];
-                buf.try_copy_to_slice(&mut data)?;
-                Ok(Some(data))
-            }
+        match decode_len_compact(buf, "data length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(buf.try_get_bytes(n)?.to_vec())),
         }
     }
 }
 
 impl Decoder<Option<bytes::Bytes>> for CompactBytes {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<bytes::Bytes>> {
-        match UnsignedVarInt.decode(buf)? {
-            0 => Ok(None),
-            n => Ok(Some(buf.try_get_bytes((n - 1) as usize)?)),
+        match decode_len_compact(buf, "data length")? {
+            None => Ok(None),
+            Some(n) => Ok(Some(buf.try_get_bytes(n)?)),
         }
     }
 }
@@ -932,8 +923,8 @@ impl<T: Encodable> Encoder<&Option<T>> for OptionStruct {
 
 impl<T: Decodable> Decoder<Option<T>> for OptionStruct {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<T>> {
-        let present: i8 = Int8.decode(buf)?;
-        if present == 1 {
+        let marker: i8 = Int8.decode(buf)?;
+        if primitives::struct_present(marker) {
             Ok(Some(T::decode(buf, self.version)?))
         } else {
             Ok(None)
@@ -1025,20 +1016,15 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<&Vec<T>> for Array<E> {
 
 impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for Array<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<Vec<T>>> {
-        match Int32.decode(buf)? {
-            -1 => Ok(None),
-            n if n >= 0 => {
-                let mut result = Vec::with_capacity(n as usize);
-                for _ in 0..n {
-                    result.push(self.0.decode(buf)?);
-                }
-                Ok(Some(result))
-            }
-            n => Err(ProtoError::NegativeLength {
-                field: "array length",
-                value: n as i64,
-            }),
+        let Some(n) = decode_len_i32(buf, "array length")? else {
+            return Ok(None);
+        };
+        check_array(n, "array length", buf)?;
+        let mut result = Vec::with_capacity(n);
+        for _ in 0..n {
+            result.push(self.0.decode(buf)?);
         }
+        Ok(Some(result))
     }
 }
 
@@ -1141,16 +1127,15 @@ impl<T, E: for<'a> Encoder<&'a T>> Encoder<&Vec<T>> for CompactArray<E> {
 
 impl<T, E: Decoder<T>> Decoder<Option<Vec<T>>> for CompactArray<E> {
     fn decode<B: ByteBuf>(&self, buf: &mut B) -> Result<Option<Vec<T>>> {
-        match UnsignedVarInt.decode(buf)? {
-            0 => Ok(None),
-            n => {
-                let mut result = Vec::with_capacity((n - 1) as usize);
-                for _ in 1..n {
-                    result.push(self.0.decode(buf)?);
-                }
-                Ok(Some(result))
-            }
+        let Some(n) = decode_len_compact(buf, "compact array length")? else {
+            return Ok(None);
+        };
+        check_array(n, "compact array length", buf)?;
+        let mut result = Vec::with_capacity(n);
+        for _ in 0..n {
+            result.push(self.0.decode(buf)?);
         }
+        Ok(Some(result))
     }
 }
 
@@ -1333,6 +1318,93 @@ mod tests {
             let mut buf = vec![];
             UnsignedVarLong.encode(&mut buf, v).unwrap();
             assert_eq!(UnsignedVarLong.compute_size(v).unwrap(), buf.len());
+        }
+    }
+
+    fn dec<T, E: Decoder<T>>(e: &E, mut input: &[u8]) -> Result<(T, usize)> {
+        let len = input.len();
+        let v = e.decode(&mut input)?;
+        Ok((v, len - input.len()))
+    }
+
+    #[test]
+    fn compact_len_edges() {
+        let r: Result<(Option<std::string::String>, usize)> = dec(&CompactString, &[0x00]);
+        assert_eq!(r.unwrap(), (None, 1));
+        let r: Result<(Option<std::string::String>, usize)> = dec(&CompactString, &[0x01]);
+        assert_eq!(r.unwrap(), (Some(std::string::String::new()), 1));
+        // raw 0xFFFFFFFF => Java int -1, minus 1 => -2: rejected (spec S1)
+        let r: Result<(Option<Vec<u8>>, usize)> = dec(&CompactBytes, &[0xff, 0xff, 0xff, 0xff, 0x0f]);
+        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -2, .. })));
+        // raw 0x80000000 => length i32::MAX: string too long (D3), before any allocation
+        let r: Result<(Option<std::string::String>, usize)> = dec(&CompactString, &[0x80, 0x80, 0x80, 0x80, 0x08]);
+        assert!(matches!(r, Err(ProtoError::StringTooLong { .. })));
+    }
+
+    #[test]
+    fn compact_string_longer_than_0x7fff_rejected() {
+        // D3: Java rejects compact strings longer than 0x7fff; the crate used to accept them.
+        let mut input = vec![0x81, 0x80, 0x02]; // uvarint 0x8001 => length 0x8000
+        input.extend(std::iter::repeat_n(b'a', 0x8000));
+        let r: Result<(std::string::String, usize)> = dec(&CompactString, &input);
+        assert!(matches!(r, Err(ProtoError::StringTooLong { len: 0x8000, .. })));
+    }
+
+    #[test]
+    fn non_nullable_null_still_errors() {
+        let r: Result<(std::string::String, usize)> = dec(&String, &[0xff, 0xff]);
+        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+        let r: Result<(Vec<u8>, usize)> = dec(&CompactBytes, &[0x00]);
+        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+        let r: Result<(Vec<i32>, usize)> = dec(&Array(Int32), &[0xff, 0xff, 0xff, 0xff]);
+        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+    }
+
+    #[test]
+    fn negative_length_below_minus_one_rejected() {
+        let r: Result<(Option<std::string::String>, usize)> = dec(&String, &[0xff, 0xfe]);
+        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -2, .. })));
+    }
+
+    #[test]
+    fn hostile_lengths_fail_fast() {
+        // D5: each of these used to allocate the declared length before reading.
+        let r: Result<(Option<Vec<i32>>, usize)> = dec(&Array(Int32), &[0x7f, 0xff, 0xff, 0xff]);
+        assert!(matches!(r, Err(ProtoError::ArrayTooLong { len: 0x7fff_ffff, remaining: 0, .. })));
+        let r: Result<(Option<Vec<i32>>, usize)> = dec(&CompactArray(Int32), &[0xff, 0xff, 0xff, 0xff, 0x07]);
+        assert!(matches!(r, Err(ProtoError::ArrayTooLong { .. })));
+        // Bytes/strings: the buffer check happens before any copy, so these fail with the
+        // crate's not-enough-bytes error instead of allocating 2 GiB / 32 KiB first.
+        let r: Result<(Option<Vec<u8>>, usize)> = dec(&Bytes, &[0x7f, 0xff, 0xff, 0xff, 0x01]);
+        assert!(r.is_err());
+        let r: Result<(Option<std::string::String>, usize)> = dec(&String, &[0x7f, 0xff, 0x41]);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn zero_size_elements_still_bounded_by_remaining() {
+        // An array of 3 empty compact arrays would fit in 3 bytes; 4 declared elements with
+        // 3 bytes left is rejected up front, as Java does ("Tried to allocate a collection").
+        let r: Result<(Vec<Vec<i32>>, usize)> = dec(&CompactArray(CompactArray(Int32)), &[0x05, 0x01, 0x01, 0x01]);
+        assert!(matches!(r, Err(ProtoError::ArrayTooLong { len: 4, remaining: 3, .. })));
+        let r: Result<(Vec<Vec<i32>>, usize)> = dec(&CompactArray(CompactArray(Int32)), &[0x04, 0x01, 0x01, 0x01]);
+        assert_eq!(r.unwrap(), (vec![vec![], vec![], vec![]], 4));
+    }
+
+    #[test]
+    fn option_struct_marker_follows_java() {
+        // D4: Java treats only a negative marker as null; 0 and 2 mean "present".
+        #[derive(Debug, PartialEq)]
+        struct One(i8);
+        impl Decodable for One {
+            fn decode<B: ByteBuf>(buf: &mut B, _version: i16) -> Result<Self> {
+                Ok(One(Int8.decode(buf)?))
+            }
+        }
+        for (marker, want) in [(1u8, Some(One(9))), (0, Some(One(9))), (2, Some(One(9))), (0xff, None), (0x80, None)] {
+            let mut input: &[u8] = &[marker, 9];
+            let got: Option<One> = OptionStruct { version: 0 }.decode(&mut input).unwrap();
+            assert_eq!(got, want, "marker {marker:#x}");
         }
     }
 }

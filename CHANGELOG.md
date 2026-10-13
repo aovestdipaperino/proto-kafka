@@ -9,6 +9,9 @@
 ### Bug fixes
 
 - **Varints longer than their type are rejected (D1).** `UnsignedVarInt`/`VarInt` accepted a 5th byte with the continuation bit set (and `UnsignedVarLong`/`VarLong` a 10th), returning a value and leaving the rest of the varint in the buffer so every following field was misparsed. They now fail with `ProtoError::VarintTooLong`, as Java does. A final byte carrying bits beyond the type width (which Java silently drops) now fails with `ProtoError::VarintOverflow`.
+- **Denial of service via hostile lengths (D5).** Array, compact array, bytes and string decoders, and record header decoding, pre-allocated memory sized by an attacker-controlled length before checking the input. Arrays declaring more elements than bytes remaining now fail with `ProtoError::ArrayTooLong` (Java's rule); byte and string reads check the buffer first.
+- **Compact strings longer than 32767 bytes are rejected (D3)** with `ProtoError::StringTooLong`, as Java does.
+- **Nullable struct marker follows Java (D4).** Any non-negative marker means "present"; previously only `1` did, so a `0` marker misparsed the rest of the message.
 - The generator no longer emits the deprecated `std::u32::MAX` (now `u32::MAX`), for forward compatibility with newer rustc versions where it fails under `#![deny(warnings)]`; all messages regenerated.
 - **`compression::snappy::decompress` corrupts raw snappy payloads ≥ 16 bytes.** The Xerial magic header probe used `try_get_bytes(16)`, which consumes the bytes from the buffer. If the magic didn't match (raw snappy fallback path), the fallback read from the already-advanced buffer and got truncated data, producing a decompression error. The probe now uses `try_peek_bytes(0..16)` and explicitly consumes the magic bytes only after the match is confirmed. Includes regression test `decompression_fallback_large_payload`. Ported from upstream commit `14d3e104` (PR #149, Steven Le Roux).
 
