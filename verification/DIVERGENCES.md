@@ -29,6 +29,8 @@ and `checked 266 record vectors; strict rejections where Java accepts: {}`
 | # | Area | Java | Spec before fix | Fix |
 |---|---|---|---|---|
 | G1 | Record set: invalid magic in a truncated final batch | rejects once 17 bytes (`HEADER_SIZE_UP_TO_MAGIC`) are present, before checking the batch is complete | returned the bytes as `truncated_tail` | `records::decode` checks magic before the completeness check (5 golden vectors) |
+| G2 | v2 batch with count 0 / codec 5-7 | count 0: empty, trailing bytes and codec ignored; count > 0 with codec 5-7: rejected (`CompressionType.forId`) | count 0 with trailing bytes rejected; codec 5-7 accepted as compressed | `records::decode_v2` follows `DefaultRecordBatch.iterator()` order |
+| G3 | Legacy message codec bits | codec 5-7 rejected (`forId`), ZSTD wrapper rejected, compressed wrapper with null value rejected | codec bits ignored, all accepted | `records::decode_legacy` checks them |
 
 ## Crate (proto-kafka) vs. Java
 

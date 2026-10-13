@@ -143,10 +143,18 @@ fn decode_v2(frame: &[u8]) -> Result<Batch> {
     let producer_epoch = r.i16()?;
     let base_sequence = r.i32()?;
     let count = r.i32()?;
-    if count < 0 {
+    // Order follows Java DefaultRecordBatch.iterator(): an empty batch yields nothing
+    // before the codec is looked at (trailing bytes ignored); then isCompressed() ->
+    // CompressionType.forId throws for codec ids 5-7; then RecordIterator rejects a
+    // negative count.
+    let codec = attributes & 0x07;
+    let payload = if count == 0 {
+        Payload::Records(Vec::new())
+    } else if codec > 4 {
+        return Err(err(format!("unknown compression codec {codec}")));
+    } else if count < 0 {
         return Err(err("negative record count"));
-    }
-    let payload = if attributes & 0x07 != 0 {
+    } else if codec != 0 {
         Payload::Compressed(r.take(r.remaining())?.to_vec())
     } else {
         let mut records = Vec::new();
@@ -252,6 +260,15 @@ fn decode_legacy(frame: &[u8]) -> Result<LegacyMessage> {
     let timestamp = if magic == 1 { Some(r.i64()?) } else { None };
     let key = legacy_bytes(&mut r)?;
     let value = legacy_bytes(&mut r)?;
+    // Java AbstractLegacyRecordBatch.iterator(): isCompressed() -> CompressionType.forId
+    // throws for ids 5-7; DeepRecordsIterator rejects a ZSTD (4) wrapper and a wrapper with
+    // a null value. Codecs 1-3 are decompressed by Java; the spec keeps the wrapper opaque.
+    match attributes & 0x07 {
+        c @ 5..=7 => return Err(err(format!("unknown compression codec {c}"))),
+        4 => return Err(err("zstd wrapper in a legacy message")),
+        1..=3 if value.is_none() => return Err(err("compressed legacy wrapper with null value")),
+        _ => {}
+    }
     // Java LegacyRecord does not reject trailing bytes inside the frame; neither do we.
     Ok(LegacyMessage {
         offset,

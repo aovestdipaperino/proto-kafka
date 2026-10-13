@@ -159,6 +159,28 @@ Spec bugs found and fixed:
   with `SpecError::Records`, and `Strict::S6UnknownMagic` was removed. Test:
   `spec/tests/records.rs::unknown_magic_is_rejected_like_java`. **verified**
 
+- **G2. v2 batch: empty batch vs. codec (final review I3).** Java
+  `DefaultRecordBatch.iterator()` (`clients/.../common/record/DefaultRecordBatch.java:320-325`)
+  returns `Collections.emptyIterator()` when `count() == 0` **before** anything else, so an
+  empty batch with trailing bytes after the header, or with any codec id, is accepted with
+  no records. Only then does `isCompressed()` -> `compressionType()` ->
+  `CompressionType.forId` (`CompressionType.java:144-158`) throw
+  `IllegalArgumentException` for codec ids 5-7, and `RecordIterator`'s constructor
+  (`DefaultRecordBatch.java:583-586`) rejects a negative count. The spec rejected
+  count-0-with-trailing-bytes (non-Strict, a false rejection) and accepted codecs 5-7 as
+  `Payload::Compressed` (more lenient than Java). Fix: `records::decode_v2` follows Java's
+  order. Tests: `spec/tests/records.rs::empty_batch_ignores_trailing_bytes_and_codec`,
+  `unknown_codec_with_records_is_rejected_like_java`. **verified** (source).
+- **G3. Legacy message codec checks.** Java `AbstractLegacyRecordBatch.iterator()`
+  (`AbstractLegacyRecordBatch.java:234-236`) calls `isCompressed()`, i.e.
+  `LegacyRecord.compressionType()` -> `CompressionType.forId(attributes & 0x07)`
+  (`LegacyRecord.java:242-243`), which throws for 5-7. `DeepRecordsIterator`
+  (`AbstractLegacyRecordBatch.java:322-334`) then rejects a ZSTD (4) wrapper and a wrapper
+  whose value is null. The spec ignored the legacy codec bits and accepted all of these.
+  Fix: `records::decode_legacy` rejects codec 4-7 and a null-valued compressed wrapper;
+  codecs 1-3 stay opaque (see "Compressed payloads"). Test:
+  `spec/tests/records.rs::legacy_codec_checks_follow_java`. **verified** (source).
+
 No message-interpreter (`interp`/`wire`) bug was found: every default, random and
 Java-accepted mutated message vector decodes to Java's value and consumed length, and every
 default and random vector re-encodes byte-for-byte. Header versions match Java for all 292
