@@ -118,6 +118,8 @@ pub mod header_io;
 pub mod messages;
 pub mod protocol;
 pub mod records;
+#[cfg(all(kani, test))]
+mod proofs;
 
 pub use error::{ProtoError, ResponseError};
 pub use indexmap;

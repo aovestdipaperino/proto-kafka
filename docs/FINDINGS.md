@@ -290,3 +290,28 @@ Final status: `golden_headers`, `golden_messages` (including
 - Correction: the earlier claim that main did not compile on Rust 1.88 was wrong. It came
   from Homebrew rustc 1.99 shadowing rustup's 1.88. `std::u32::MAX` is only an error on
   newer compilers; the generator now emits `u32::MAX` for forward compatibility.
+
+## Phase 2 proofs (Kani 0.68.0)
+
+Run: `RUSTC_WRAPPER= cargo kani --tests -p proto-kafka --no-default-features --features client,broker`.
+Environment: CBMC 6.11.0; the global `RUSTC_WRAPPER=kache` breaks kani-compiler, so it is cleared per command (global config untouched). All 17 harnesses verified, no counterexamples, no crate-vs-spec divergences.
+
+| harness | result | time | covers |
+|---|---|---|---|
+| uvarint_decode_conforms | SUCCESSFUL | 3.9s | complete: all inputs up to 6 bytes (decoder reads at most 5) |
+| uvarlong_decode_conforms | SUCCESSFUL | 8.0s | complete: all inputs up to 11 bytes (reads at most 10) |
+| varint_signed_decode_conforms | SUCCESSFUL | 4.5s | complete: up to 6 bytes |
+| varlong_signed_decode_conforms | SUCCESSFUL | 9.0s | complete: up to 11 bytes |
+| uvarint_encode_conforms | SUCCESSFUL | 2.1s | complete: every u32, plus size and roundtrip |
+| uvarlong_encode_conforms | SUCCESSFUL | 3.3s | complete: every u64, plus size and roundtrip |
+| varint_signed_encode_conforms | SUCCESSFUL | 0.9s | complete: every i32 |
+| varlong_signed_encode_conforms | SUCCESSFUL | 1.5s | complete: every i64 |
+| int16_length_conforms | SUCCESSFUL | 0.5s | complete: every i16, nullable and not |
+| int32_length_conforms | SUCCESSFUL | 0.5s | complete: every i32, nullable and not |
+| compact_length_conforms | SUCCESSFUL | 5.5s | complete: every u32, nullable and not |
+| unsigned_varint_wrapper_decode | SUCCESSFUL | 8.1s | complete: up to 6 bytes |
+| unsigned_varlong_wrapper_decode | SUCCESSFUL | 14.0s | complete: up to 11 bytes |
+| unsigned_varint_wrapper_encode | SUCCESSFUL | 1.2s | complete: every u32 |
+| unsigned_varlong_wrapper_encode | SUCCESSFUL | 1.4s | complete: every u64 |
+| varint_wrapper_decode | SUCCESSFUL | 9.2s | complete: up to 6 bytes |
+| varlong_wrapper_decode | SUCCESSFUL | 15.5s | complete: up to 11 bytes |
