@@ -3,14 +3,15 @@
 //! level (no tagged section); the field-level `flexible` override selects the compact
 //! encoding, exactly as RequestHeader.ClientId does in reverse.
 //!
-//! Status: the encode harnesses are proofs. The decode harnesses are BLOCKED (written, not
-//! registered): `interp::decode` is out of reach for Kani 0.68 / CBMC 6.11; see the note above
-//! `string_nullable_decode`.
+//! Decode harnesses compare against `interp::decode_field`, the Value-free field decoder that
+//! `interp::decode` applies to every field (a whole-message `interp::decode` builds a
+//! recursive `Value` tree that CBMC cannot symbolically execute).
 
 use crate::protocol::types;
 use crate::protocol::{Decoder, Encoder};
-use proto_kafka_spec::interp;
+use proto_kafka_spec::interp::{self, decode_field, Field, Mode, PrimValue};
 use proto_kafka_spec::schema::*;
+use proto_kafka_spec::wire::LenKind;
 use proto_kafka_spec::value::{StructValue, Value};
 
 macro_rules! one_field {
@@ -49,116 +50,293 @@ one_field!(CBYTES_N, FieldType::Prim(Prim::Bytes), NULL, COMPACT);
 one_field!(ARR_N, FieldType::PrimArray(Prim::Int32), NULL, CLASSIC);
 one_field!(CARR_N, FieldType::PrimArray(Prim::Int32), NULL, COMPACT);
 
-/// Spec decode of the single field: (value, bytes consumed).
-fn spec(schema: &'static MessageSchema, input: &[u8]) -> Option<(Value, usize)> {
-    interp::decode(schema, 0, input).ok().map(|(sv, n)| (sv.fields[0].1.clone(), n))
+/// Spec decode of the single field: (field, bytes consumed). `decode_field` is the
+/// field-level semantics `interp::decode` applies to every field; it builds no `Value` tree,
+/// which keeps CBMC's symbolic execution finite (the recursive `Value` drop glue does not).
+fn spec(schema: &'static MessageSchema, input: &[u8]) -> Option<(Field, usize)> {
+    decode_field(Mode::Strict, &schema.root.fields[0], 0, schema.flexible.contains(0), input).ok()
 }
 
-fn check<T>(got: crate::error::Result<T>, consumed: usize, want: Option<(Value, usize)>, to_value: impl Fn(T) -> Value) {
+fn check<T>(got: crate::error::Result<T>, consumed: usize, want: Option<(Field, usize)>, to_field: impl Fn(T) -> Field) {
     match (got, want) {
         (Ok(v), Some((w, n))) => {
             assert_eq!(n, consumed);
-            assert!(to_value(v) == w);
+            assert!(to_field(v) == w);
         }
         (Err(_), None) => {}
         _ => panic!("crate and spec disagree on acceptance"),
     }
 }
 
-// BLOCKED: decode harnesses against `interp::decode`.
+// Decode harnesses: crate decoder vs `decode_field` on inputs partitioned by length prefix.
 //
-// The seven decode harnesses below are written as specified but are NOT registered as Kani
-// proofs, because none of them terminates under Kani 0.68.0 / CBMC 6.11.0. The cause is the
-// spec interpreter, not the crate and not the input bound: `interp::decode` builds and drops
-// a recursive `Value` tree (`Array(Vec<Value>)`, `Struct(Box<StructValue>)`) through heap
-// memory (`read_struct`'s `vec![None; n]` slots, the zip `IntoIter`, `?` error paths). CBMC
-// loses the enum discriminant through the heap and unrolls `drop_glue::<Value>` to the unwind
-// depth on ~130-150 sites, so symbolic execution never finishes. Evidence: a fully concrete
-// 3-byte input does not finish in 240 s at unwind(10), nor does symbolic N = 3 at unwind(4);
-// the brief's versions ran 1300 s (timeout). The encode harnesses (where the harness builds
-// the `StructValue` concretely) are fine. Unblocking needs a Value-free spec entry point for a
-// single primitive/array field, or Kani stubbing; see docs/FINDINGS.md ("Phase 2 proofs").
+// A symbolic prefix value makes the crate copy a symbolic number of bytes through
+// `Bytes::copy_from_slice` (pointer-tagged promotable `Bytes`), which CBMC cannot finish even
+// for 6-byte inputs. So the prefix is written concretely by construction, and each harness
+// covers every input that starts with that prefix: payload, trailing bytes and total length
+// stay symbolic (total length up to the decoder's bound `MAX`). The harnesses of one decoder
+// cover: the null prefix, every prefix value `0..=MAX - header` (for compact prefixes, every
+// varint encoding length 1..=5 of it), and every truncated prefix. NOT covered (see
+// docs/FINDINGS.md): prefix values that cannot be expressed concretely, i.e. negative lengths
+// below -1, lengths above `MAX - header` (always longer than the input), and compact
+// prefixes whose varint value exceeds `MAX` (including 5-byte varints with high bits set).
 
-// BLOCKED (not a #[kani::proof]): intended unwind(10); see the note above.
-#[allow(dead_code)]
-fn string_nullable_decode() {
-    let bytes: [u8; 6] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 6);
-    let mut s: &[u8] = &bytes[..len];
+/// The length prefix for `v` (`None` = null) and its length: big-endian i16/i32, or for
+/// `Compact` the unsigned varint of `v + 1` in exactly `m` bytes (non-minimal for `m > 1`,
+/// which Java and both decoders accept).
+fn prefix(kind: LenKind, v: Option<usize>, m: usize) -> ([u8; 5], usize) {
+    let mut out = [0u8; 5];
+    match kind {
+        LenKind::Int16 => {
+            let raw = v.map_or(-1, |n| n as i16).to_be_bytes();
+            out[0] = raw[0];
+            out[1] = raw[1];
+            (out, 2)
+        }
+        LenKind::Int32 => {
+            let raw = v.map_or(-1, |n| n as i32).to_be_bytes();
+            out[0] = raw[0];
+            out[1] = raw[1];
+            out[2] = raw[2];
+            out[3] = raw[3];
+            (out, 4)
+        }
+        LenKind::Compact => {
+            let raw = v.map_or(0, |n| n as u32 + 1);
+            for i in 0..m {
+                let group = ((raw >> (7 * i)) & 0x7f) as u8;
+                out[i] = if i + 1 < m { group | 0x80 } else { group };
+            }
+            (out, m)
+        }
+    }
+}
+
+/// Every input of up to `MAX` bytes that starts with the `m`-byte prefix for `v` (`m` is
+/// ignored for fixed-width prefixes). The total length is enumerated concretely: with a
+/// symbolic slice length CBMC no longer propagates the constant prefix.
+fn with_prefix<const MAX: usize>(kind: LenKind, v: Option<usize>, m: usize, run: fn(&[u8])) {
+    let (pre, hdr) = prefix(kind, v, m);
+    for len in hdr..=MAX {
+        let mut bytes: [u8; MAX] = kani::any();
+        for i in 0..hdr {
+            bytes[i] = pre[i];
+        }
+        run(&bytes[..len]);
+    }
+}
+
+/// Every input shorter than its fixed-width length prefix (`L < 2`, `L < 4` arbitrary
+/// bytes). For compact prefixes only the empty input: a truncated varint with symbolic low
+/// bits is not covered (CBMC does not fold `(x | 0x80) & 0x80`, so the varint value, and with
+/// it the payload size, becomes symbolic again).
+fn truncated_prefix<const MAX: usize>(kind: LenKind, run: fn(&[u8])) {
+    let n = match kind {
+        LenKind::Int16 => 2,
+        LenKind::Int32 => 4,
+        LenKind::Compact => 1,
+    };
+    for len in 0..n {
+        let bytes: [u8; MAX] = kani::any();
+        run(&bytes[..len]);
+    }
+}
+
+fn run_string_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<String>> = types::String.decode(&mut s);
-    check(got, len - s.len(), spec(&STR_N, &bytes[..len]), |v| Value::Str(v.map(String::into_bytes)));
+    check(got, input.len() - s.len(), spec(&STR_N, input), |v| Field::Prim(PrimValue::Str(v.map(String::into_bytes))));
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(10); see the note above.
-#[allow(dead_code)]
-fn string_decode() {
-    let bytes: [u8; 6] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 6);
-    let mut s: &[u8] = &bytes[..len];
+fn run_string(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<String> = types::String.decode(&mut s);
-    check(got, len - s.len(), spec(&STR, &bytes[..len]), |v| Value::Str(Some(v.into_bytes())));
+    check(got, input.len() - s.len(), spec(&STR, input), |v| Field::Prim(PrimValue::Str(Some(v.into_bytes()))));
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(10); see the note above.
-#[allow(dead_code)]
-fn compact_string_nullable_decode() {
-    let bytes: [u8; 6] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 6);
-    let mut s: &[u8] = &bytes[..len];
+fn run_compact_string_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<String>> = types::CompactString.decode(&mut s);
-    check(got, len - s.len(), spec(&CSTR_N, &bytes[..len]), |v| Value::Str(v.map(String::into_bytes)));
+    check(got, input.len() - s.len(), spec(&CSTR_N, input), |v| Field::Prim(PrimValue::Str(v.map(String::into_bytes))));
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(10); see the note above.
-#[allow(dead_code)]
-fn bytes_nullable_decode() {
-    let bytes: [u8; 7] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 7);
-    let mut s: &[u8] = &bytes[..len];
+fn run_bytes_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<u8>>> = types::Bytes.decode(&mut s);
-    check(got, len - s.len(), spec(&BYTES_N, &bytes[..len]), Value::Bytes);
+    check(got, input.len() - s.len(), spec(&BYTES_N, input), |v| Field::Prim(PrimValue::Bytes(v)));
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(10); see the note above.
-#[allow(dead_code)]
-fn compact_bytes_nullable_decode() {
-    let bytes: [u8; 6] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 6);
-    let mut s: &[u8] = &bytes[..len];
+fn run_compact_bytes_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<u8>>> = types::CompactBytes.decode(&mut s);
-    check(got, len - s.len(), spec(&CBYTES_N, &bytes[..len]), Value::Bytes);
+    check(got, input.len() - s.len(), spec(&CBYTES_N, input), |v| Field::Prim(PrimValue::Bytes(v)));
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(14); see the note above.
-#[allow(dead_code)]
-fn array_int32_nullable_decode() {
-    let bytes: [u8; 12] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 12);
-    let mut s: &[u8] = &bytes[..len];
+fn run_array_int32_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<i32>>> = types::Array(types::Int32).decode(&mut s);
-    check(got, len - s.len(), spec(&ARR_N, &bytes[..len]), |v| {
-        Value::Array(v.map(|xs| xs.into_iter().map(Value::I32).collect()))
+    check(got, input.len() - s.len(), spec(&ARR_N, input), |v| {
+        Field::PrimArray(v.map(|xs| xs.into_iter().map(PrimValue::I32).collect()))
     });
 }
 
-// BLOCKED (not a #[kani::proof]): intended unwind(14); see the note above.
-#[allow(dead_code)]
-fn compact_array_int32_nullable_decode() {
-    let bytes: [u8; 10] = kani::any();
-    let len: usize = kani::any();
-    kani::assume(len <= 10);
-    let mut s: &[u8] = &bytes[..len];
+fn run_compact_array_int32_nullable(input: &[u8]) {
+    let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<i32>>> = types::CompactArray(types::Int32).decode(&mut s);
-    check(got, len - s.len(), spec(&CARR_N, &bytes[..len]), |v| {
-        Value::Array(v.map(|xs| xs.into_iter().map(Value::I32).collect()))
+    check(got, input.len() - s.len(), spec(&CARR_N, input), |v| {
+        Field::PrimArray(v.map(|xs| xs.into_iter().map(PrimValue::I32).collect()))
     });
 }
+
+/// `name = (MAX, kind, run, class)`; class is `trunc`, `null m` or `len K m` (`m` = prefix
+/// encoding length, 1 for fixed-width prefixes).
+macro_rules! decode_harnesses {
+    ($unwind:literal: $($name:ident = ($max:literal, $kind:ident, $run:ident, $($class:tt)+)),* $(,)?) => {$(
+        #[kani::proof]
+        #[kani::unwind($unwind)]
+        fn $name() {
+            decode_harnesses!(@body $max, LenKind::$kind, $run, $($class)+);
+        }
+    )*};
+    (@body $max:literal, $kind:expr, $run:ident, trunc) => { truncated_prefix::<$max>($kind, $run) };
+    (@body $max:literal, $kind:expr, $run:ident, null $m:literal) => { with_prefix::<$max>($kind, None, $m, $run) };
+    (@body $max:literal, $kind:expr, $run:ident, len $k:literal $m:literal) => { with_prefix::<$max>($kind, Some($k), $m, $run) };
+}
+
+decode_harnesses!(10:
+    string_nullable_decode_trunc = (6, Int16, run_string_nullable, trunc),
+    string_nullable_decode_null = (6, Int16, run_string_nullable, null 1),
+    string_nullable_decode_len0 = (6, Int16, run_string_nullable, len 0 1),
+    string_nullable_decode_len1 = (6, Int16, run_string_nullable, len 1 1),
+    string_nullable_decode_len2 = (6, Int16, run_string_nullable, len 2 1),
+    string_nullable_decode_len3 = (6, Int16, run_string_nullable, len 3 1),
+    string_nullable_decode_len4 = (6, Int16, run_string_nullable, len 4 1),
+    string_decode_trunc = (6, Int16, run_string, trunc),
+    string_decode_null = (6, Int16, run_string, null 1),
+    string_decode_len0 = (6, Int16, run_string, len 0 1),
+    string_decode_len1 = (6, Int16, run_string, len 1 1),
+    string_decode_len2 = (6, Int16, run_string, len 2 1),
+    string_decode_len3 = (6, Int16, run_string, len 3 1),
+    string_decode_len4 = (6, Int16, run_string, len 4 1),
+    compact_string_nullable_decode_trunc = (6, Compact, run_compact_string_nullable, trunc),
+    compact_string_nullable_decode_null_m1 = (6, Compact, run_compact_string_nullable, null 1),
+    compact_string_nullable_decode_len0_m1 = (6, Compact, run_compact_string_nullable, len 0 1),
+    compact_string_nullable_decode_len1_m1 = (6, Compact, run_compact_string_nullable, len 1 1),
+    compact_string_nullable_decode_len2_m1 = (6, Compact, run_compact_string_nullable, len 2 1),
+    compact_string_nullable_decode_len3_m1 = (6, Compact, run_compact_string_nullable, len 3 1),
+    compact_string_nullable_decode_len4_m1 = (6, Compact, run_compact_string_nullable, len 4 1),
+    compact_string_nullable_decode_len5_m1 = (6, Compact, run_compact_string_nullable, len 5 1),
+    compact_string_nullable_decode_null_m2 = (6, Compact, run_compact_string_nullable, null 2),
+    compact_string_nullable_decode_len0_m2 = (6, Compact, run_compact_string_nullable, len 0 2),
+    compact_string_nullable_decode_len1_m2 = (6, Compact, run_compact_string_nullable, len 1 2),
+    compact_string_nullable_decode_len2_m2 = (6, Compact, run_compact_string_nullable, len 2 2),
+    compact_string_nullable_decode_len3_m2 = (6, Compact, run_compact_string_nullable, len 3 2),
+    compact_string_nullable_decode_len4_m2 = (6, Compact, run_compact_string_nullable, len 4 2),
+    compact_string_nullable_decode_null_m3 = (6, Compact, run_compact_string_nullable, null 3),
+    compact_string_nullable_decode_len0_m3 = (6, Compact, run_compact_string_nullable, len 0 3),
+    compact_string_nullable_decode_len1_m3 = (6, Compact, run_compact_string_nullable, len 1 3),
+    compact_string_nullable_decode_len2_m3 = (6, Compact, run_compact_string_nullable, len 2 3),
+    compact_string_nullable_decode_len3_m3 = (6, Compact, run_compact_string_nullable, len 3 3),
+    compact_string_nullable_decode_null_m4 = (6, Compact, run_compact_string_nullable, null 4),
+    compact_string_nullable_decode_len0_m4 = (6, Compact, run_compact_string_nullable, len 0 4),
+    compact_string_nullable_decode_len1_m4 = (6, Compact, run_compact_string_nullable, len 1 4),
+    compact_string_nullable_decode_len2_m4 = (6, Compact, run_compact_string_nullable, len 2 4),
+    compact_string_nullable_decode_null_m5 = (6, Compact, run_compact_string_nullable, null 5),
+    compact_string_nullable_decode_len0_m5 = (6, Compact, run_compact_string_nullable, len 0 5),
+    compact_string_nullable_decode_len1_m5 = (6, Compact, run_compact_string_nullable, len 1 5),
+    bytes_nullable_decode_trunc = (7, Int32, run_bytes_nullable, trunc),
+    bytes_nullable_decode_null = (7, Int32, run_bytes_nullable, null 1),
+    bytes_nullable_decode_len0 = (7, Int32, run_bytes_nullable, len 0 1),
+    bytes_nullable_decode_len1 = (7, Int32, run_bytes_nullable, len 1 1),
+    bytes_nullable_decode_len2 = (7, Int32, run_bytes_nullable, len 2 1),
+    bytes_nullable_decode_len3 = (7, Int32, run_bytes_nullable, len 3 1),
+    compact_bytes_nullable_decode_trunc = (6, Compact, run_compact_bytes_nullable, trunc),
+    compact_bytes_nullable_decode_null_m1 = (6, Compact, run_compact_bytes_nullable, null 1),
+    compact_bytes_nullable_decode_len0_m1 = (6, Compact, run_compact_bytes_nullable, len 0 1),
+    compact_bytes_nullable_decode_len1_m1 = (6, Compact, run_compact_bytes_nullable, len 1 1),
+    compact_bytes_nullable_decode_len2_m1 = (6, Compact, run_compact_bytes_nullable, len 2 1),
+    compact_bytes_nullable_decode_len3_m1 = (6, Compact, run_compact_bytes_nullable, len 3 1),
+    compact_bytes_nullable_decode_len4_m1 = (6, Compact, run_compact_bytes_nullable, len 4 1),
+    compact_bytes_nullable_decode_len5_m1 = (6, Compact, run_compact_bytes_nullable, len 5 1),
+    compact_bytes_nullable_decode_null_m2 = (6, Compact, run_compact_bytes_nullable, null 2),
+    compact_bytes_nullable_decode_len0_m2 = (6, Compact, run_compact_bytes_nullable, len 0 2),
+    compact_bytes_nullable_decode_len1_m2 = (6, Compact, run_compact_bytes_nullable, len 1 2),
+    compact_bytes_nullable_decode_len2_m2 = (6, Compact, run_compact_bytes_nullable, len 2 2),
+    compact_bytes_nullable_decode_len3_m2 = (6, Compact, run_compact_bytes_nullable, len 3 2),
+    compact_bytes_nullable_decode_len4_m2 = (6, Compact, run_compact_bytes_nullable, len 4 2),
+    compact_bytes_nullable_decode_null_m3 = (6, Compact, run_compact_bytes_nullable, null 3),
+    compact_bytes_nullable_decode_len0_m3 = (6, Compact, run_compact_bytes_nullable, len 0 3),
+    compact_bytes_nullable_decode_len1_m3 = (6, Compact, run_compact_bytes_nullable, len 1 3),
+    compact_bytes_nullable_decode_len2_m3 = (6, Compact, run_compact_bytes_nullable, len 2 3),
+    compact_bytes_nullable_decode_len3_m3 = (6, Compact, run_compact_bytes_nullable, len 3 3),
+    compact_bytes_nullable_decode_null_m4 = (6, Compact, run_compact_bytes_nullable, null 4),
+    compact_bytes_nullable_decode_len0_m4 = (6, Compact, run_compact_bytes_nullable, len 0 4),
+    compact_bytes_nullable_decode_len1_m4 = (6, Compact, run_compact_bytes_nullable, len 1 4),
+    compact_bytes_nullable_decode_len2_m4 = (6, Compact, run_compact_bytes_nullable, len 2 4),
+    compact_bytes_nullable_decode_null_m5 = (6, Compact, run_compact_bytes_nullable, null 5),
+    compact_bytes_nullable_decode_len0_m5 = (6, Compact, run_compact_bytes_nullable, len 0 5),
+    compact_bytes_nullable_decode_len1_m5 = (6, Compact, run_compact_bytes_nullable, len 1 5),
+);
+
+decode_harnesses!(14:
+    array_int32_nullable_decode_trunc = (12, Int32, run_array_int32_nullable, trunc),
+    array_int32_nullable_decode_null = (12, Int32, run_array_int32_nullable, null 1),
+    array_int32_nullable_decode_len0 = (12, Int32, run_array_int32_nullable, len 0 1),
+    array_int32_nullable_decode_len1 = (12, Int32, run_array_int32_nullable, len 1 1),
+    array_int32_nullable_decode_len2 = (12, Int32, run_array_int32_nullable, len 2 1),
+    array_int32_nullable_decode_len3 = (12, Int32, run_array_int32_nullable, len 3 1),
+    array_int32_nullable_decode_len4 = (12, Int32, run_array_int32_nullable, len 4 1),
+    array_int32_nullable_decode_len5 = (12, Int32, run_array_int32_nullable, len 5 1),
+    array_int32_nullable_decode_len6 = (12, Int32, run_array_int32_nullable, len 6 1),
+    array_int32_nullable_decode_len7 = (12, Int32, run_array_int32_nullable, len 7 1),
+    array_int32_nullable_decode_len8 = (12, Int32, run_array_int32_nullable, len 8 1),
+    compact_array_int32_nullable_decode_trunc = (10, Compact, run_compact_array_int32_nullable, trunc),
+    compact_array_int32_nullable_decode_null_m1 = (10, Compact, run_compact_array_int32_nullable, null 1),
+    compact_array_int32_nullable_decode_len0_m1 = (10, Compact, run_compact_array_int32_nullable, len 0 1),
+    compact_array_int32_nullable_decode_len1_m1 = (10, Compact, run_compact_array_int32_nullable, len 1 1),
+    compact_array_int32_nullable_decode_len2_m1 = (10, Compact, run_compact_array_int32_nullable, len 2 1),
+    compact_array_int32_nullable_decode_len3_m1 = (10, Compact, run_compact_array_int32_nullable, len 3 1),
+    compact_array_int32_nullable_decode_len4_m1 = (10, Compact, run_compact_array_int32_nullable, len 4 1),
+    compact_array_int32_nullable_decode_len5_m1 = (10, Compact, run_compact_array_int32_nullable, len 5 1),
+    compact_array_int32_nullable_decode_len6_m1 = (10, Compact, run_compact_array_int32_nullable, len 6 1),
+    compact_array_int32_nullable_decode_len7_m1 = (10, Compact, run_compact_array_int32_nullable, len 7 1),
+    compact_array_int32_nullable_decode_len8_m1 = (10, Compact, run_compact_array_int32_nullable, len 8 1),
+    compact_array_int32_nullable_decode_len9_m1 = (10, Compact, run_compact_array_int32_nullable, len 9 1),
+    compact_array_int32_nullable_decode_null_m2 = (10, Compact, run_compact_array_int32_nullable, null 2),
+    compact_array_int32_nullable_decode_len0_m2 = (10, Compact, run_compact_array_int32_nullable, len 0 2),
+    compact_array_int32_nullable_decode_len1_m2 = (10, Compact, run_compact_array_int32_nullable, len 1 2),
+    compact_array_int32_nullable_decode_len2_m2 = (10, Compact, run_compact_array_int32_nullable, len 2 2),
+    compact_array_int32_nullable_decode_len3_m2 = (10, Compact, run_compact_array_int32_nullable, len 3 2),
+    compact_array_int32_nullable_decode_len4_m2 = (10, Compact, run_compact_array_int32_nullable, len 4 2),
+    compact_array_int32_nullable_decode_len5_m2 = (10, Compact, run_compact_array_int32_nullable, len 5 2),
+    compact_array_int32_nullable_decode_len6_m2 = (10, Compact, run_compact_array_int32_nullable, len 6 2),
+    compact_array_int32_nullable_decode_len7_m2 = (10, Compact, run_compact_array_int32_nullable, len 7 2),
+    compact_array_int32_nullable_decode_len8_m2 = (10, Compact, run_compact_array_int32_nullable, len 8 2),
+    compact_array_int32_nullable_decode_null_m3 = (10, Compact, run_compact_array_int32_nullable, null 3),
+    compact_array_int32_nullable_decode_len0_m3 = (10, Compact, run_compact_array_int32_nullable, len 0 3),
+    compact_array_int32_nullable_decode_len1_m3 = (10, Compact, run_compact_array_int32_nullable, len 1 3),
+    compact_array_int32_nullable_decode_len2_m3 = (10, Compact, run_compact_array_int32_nullable, len 2 3),
+    compact_array_int32_nullable_decode_len3_m3 = (10, Compact, run_compact_array_int32_nullable, len 3 3),
+    compact_array_int32_nullable_decode_len4_m3 = (10, Compact, run_compact_array_int32_nullable, len 4 3),
+    compact_array_int32_nullable_decode_len5_m3 = (10, Compact, run_compact_array_int32_nullable, len 5 3),
+    compact_array_int32_nullable_decode_len6_m3 = (10, Compact, run_compact_array_int32_nullable, len 6 3),
+    compact_array_int32_nullable_decode_len7_m3 = (10, Compact, run_compact_array_int32_nullable, len 7 3),
+    compact_array_int32_nullable_decode_null_m4 = (10, Compact, run_compact_array_int32_nullable, null 4),
+    compact_array_int32_nullable_decode_len0_m4 = (10, Compact, run_compact_array_int32_nullable, len 0 4),
+    compact_array_int32_nullable_decode_len1_m4 = (10, Compact, run_compact_array_int32_nullable, len 1 4),
+    compact_array_int32_nullable_decode_len2_m4 = (10, Compact, run_compact_array_int32_nullable, len 2 4),
+    compact_array_int32_nullable_decode_len3_m4 = (10, Compact, run_compact_array_int32_nullable, len 3 4),
+    compact_array_int32_nullable_decode_len4_m4 = (10, Compact, run_compact_array_int32_nullable, len 4 4),
+    compact_array_int32_nullable_decode_len5_m4 = (10, Compact, run_compact_array_int32_nullable, len 5 4),
+    compact_array_int32_nullable_decode_len6_m4 = (10, Compact, run_compact_array_int32_nullable, len 6 4),
+    compact_array_int32_nullable_decode_null_m5 = (10, Compact, run_compact_array_int32_nullable, null 5),
+    compact_array_int32_nullable_decode_len0_m5 = (10, Compact, run_compact_array_int32_nullable, len 0 5),
+    compact_array_int32_nullable_decode_len1_m5 = (10, Compact, run_compact_array_int32_nullable, len 1 5),
+    compact_array_int32_nullable_decode_len2_m5 = (10, Compact, run_compact_array_int32_nullable, len 2 5),
+    compact_array_int32_nullable_decode_len3_m5 = (10, Compact, run_compact_array_int32_nullable, len 3 5),
+    compact_array_int32_nullable_decode_len4_m5 = (10, Compact, run_compact_array_int32_nullable, len 4 5),
+    compact_array_int32_nullable_decode_len5_m5 = (10, Compact, run_compact_array_int32_nullable, len 5 5),
+);
 
 /// Encode side: for every nullable byte string of up to 3 bytes, the crate's encoding equals
 /// the spec's.
@@ -206,3 +384,35 @@ string_encode_harness!(
     string_encode_ascii_len3 = 3,
 );
 
+
+
+
+
+// TEMP-EXPERIMENTS
+fn zz_orig<const MAX: usize>(run: fn(&[u8])) {
+    let bytes: [u8; MAX] = kani::any();
+    let len: usize = kani::any();
+    kani::assume(len <= MAX);
+    run(&bytes[..len]);
+}
+#[kani::proof]
+#[kani::unwind(10)]
+fn zz_orig_string_nullable_decode() { zz_orig::<6>(run_string_nullable) }
+#[kani::proof]
+#[kani::unwind(10)]
+fn zz_orig_string_decode() { zz_orig::<6>(run_string) }
+#[kani::proof]
+#[kani::unwind(10)]
+fn zz_orig_compact_string_nullable_decode() { zz_orig::<6>(run_compact_string_nullable) }
+#[kani::proof]
+#[kani::unwind(10)]
+fn zz_orig_bytes_nullable_decode() { zz_orig::<7>(run_bytes_nullable) }
+#[kani::proof]
+#[kani::unwind(10)]
+fn zz_orig_compact_bytes_nullable_decode() { zz_orig::<6>(run_compact_bytes_nullable) }
+#[kani::proof]
+#[kani::unwind(14)]
+fn zz_orig_array_int32_nullable_decode() { zz_orig::<12>(run_array_int32_nullable) }
+#[kani::proof]
+#[kani::unwind(14)]
+fn zz_orig_compact_array_int32_nullable_decode() { zz_orig::<10>(run_compact_array_int32_nullable) }

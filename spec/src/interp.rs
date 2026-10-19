@@ -180,65 +180,146 @@ fn read_tagged_window(
     Ok(v)
 }
 
+/// A primitive value: the non-recursive leaves of [`Value`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrimValue {
+    Bool(bool),
+    I8(i8),
+    I16(i16),
+    U16(u16),
+    I32(i32),
+    I64(i64),
+    /// IEEE-754 bits; compared bitwise.
+    F64(u64),
+    Uuid([u8; 16]),
+    Str(Option<Vec<u8>>),
+    Bytes(Option<Vec<u8>>),
+    Records(Option<Vec<u8>>),
+}
+
+impl From<PrimValue> for Value {
+    fn from(p: PrimValue) -> Value {
+        match p {
+            PrimValue::Bool(b) => Value::Bool(b),
+            PrimValue::I8(x) => Value::I8(x),
+            PrimValue::I16(x) => Value::I16(x),
+            PrimValue::U16(x) => Value::U16(x),
+            PrimValue::I32(x) => Value::I32(x),
+            PrimValue::I64(x) => Value::I64(x),
+            PrimValue::F64(x) => Value::F64(x),
+            PrimValue::Uuid(u) => Value::Uuid(u),
+            PrimValue::Str(s) => Value::Str(s),
+            PrimValue::Bytes(b) => Value::Bytes(b),
+            PrimValue::Records(b) => Value::Records(b),
+        }
+    }
+}
+
+/// One field as read from the wire, without building a [`Value`] tree. Struct bodies are not
+/// read: `Struct` and `StructArray` report what the caller must read next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Field {
+    Prim(PrimValue),
+    /// `None` is null.
+    PrimArray(Option<Vec<PrimValue>>),
+    /// `false`: a nullable struct's null marker was read. `true`: one struct body follows
+    /// (after the 1-byte marker of a nullable struct, or immediately for a non-nullable one).
+    Struct(bool),
+    /// `None` is null; `Some(n)`: `n` struct bodies follow (already checked against the
+    /// remaining byte count).
+    StructArray(Option<usize>),
+}
+
+/// Decodes one non-tagged field of `version` from `input` (the field's flexibility is
+/// resolved against `msg_flexible`, as for a field of a message whose flexible flag is
+/// `msg_flexible`). Returns the field and the bytes consumed. This is the field-level
+/// semantics `decode` uses for every field; it builds no [`Value`] tree.
+pub fn decode_field(
+    mode: Mode,
+    f: &FieldDesc,
+    version: i16,
+    msg_flexible: bool,
+    input: &[u8],
+) -> Result<(Field, usize)> {
+    let mut r = Reader::with_mode(input, mode);
+    let v = field_head(&mut r, f, version, msg_flexible)?;
+    Ok((v, r.pos()))
+}
+
+fn field_head(r: &mut Reader<'_>, f: &FieldDesc, version: i16, msg_flexible: bool) -> Result<Field> {
+    let flex = field_flexible(f, version, msg_flexible);
+    let nullable = f.nullable.contains(version);
+    match f.ty {
+        FieldType::Prim(p) => Ok(Field::Prim(read_prim(r, p, f.name, flex, nullable)?)),
+        // Nullable struct: 1-byte marker, negative = null (Java readByte() < 0).
+        FieldType::Struct(_) => Ok(Field::Struct(!nullable || r.i8()? >= 0)),
+        FieldType::PrimArray(p) => {
+            let Some(n) = array_len(r, f.name, flex, nullable)? else {
+                return Ok(Field::PrimArray(None));
+            };
+            let mut items = Vec::with_capacity(n);
+            for _ in 0..n {
+                items.push(read_prim(r, p, f.name, flex, false)?);
+            }
+            Ok(Field::PrimArray(Some(items)))
+        }
+        FieldType::StructArray(_) => Ok(Field::StructArray(array_len(r, f.name, flex, nullable)?)),
+    }
+}
+
 fn read_field(
     r: &mut Reader<'_>,
     f: &FieldDesc,
     version: i16,
     msg_flexible: bool,
 ) -> Result<Value> {
-    let flex = field_flexible(f, version, msg_flexible);
-    let nullable = f.nullable.contains(version);
-    match f.ty {
-        FieldType::Prim(p) => read_prim(r, p, f.name, flex, nullable),
-        FieldType::Struct(s) => {
-            // Nullable struct: 1-byte marker, negative = null (Java readByte() < 0).
-            if nullable && r.i8()? < 0 {
-                return Ok(Value::Struct(None));
-            }
-            Ok(Value::Struct(Some(Box::new(read_struct(
-                r,
-                s,
-                version,
-                msg_flexible,
-            )?))))
+    Ok(match (field_head(r, f, version, msg_flexible)?, f.ty) {
+        (Field::Prim(p), _) => p.into(),
+        (Field::PrimArray(a), _) => {
+            Value::Array(a.map(|xs| xs.into_iter().map(Value::from).collect()))
         }
-        FieldType::PrimArray(p) => read_array(r, f.name, flex, nullable, |r| {
-            read_prim(r, p, f.name, flex, false)
-        }),
-        FieldType::StructArray(s) => read_array(r, f.name, flex, nullable, |r| {
-            Ok(Value::Struct(Some(Box::new(read_struct(
-                r,
-                s,
-                version,
-                msg_flexible,
-            )?))))
-        }),
-    }
+        (Field::Struct(false), _) => Value::Struct(None),
+        (Field::Struct(true), FieldType::Struct(s)) => {
+            Value::Struct(Some(Box::new(read_struct(r, s, version, msg_flexible)?)))
+        }
+        (Field::StructArray(None), _) => Value::Array(None),
+        (Field::StructArray(Some(n)), FieldType::StructArray(s)) => {
+            let mut items = Vec::with_capacity(n);
+            for _ in 0..n {
+                items.push(Value::Struct(Some(Box::new(read_struct(
+                    r,
+                    s,
+                    version,
+                    msg_flexible,
+                )?))));
+            }
+            Value::Array(Some(items))
+        }
+        (Field::Struct(true) | Field::StructArray(Some(_)), _) => {
+            unreachable!("field_head returns Struct/StructArray only for struct field types")
+        }
+    })
 }
 
-fn read_array<'a>(
-    r: &mut Reader<'a>,
+/// Array length prefix; a length above the remaining byte count is rejected up front.
+fn array_len(
+    r: &mut Reader<'_>,
     name: &'static str,
     flex: bool,
     nullable: bool,
-    mut elem: impl FnMut(&mut Reader<'a>) -> Result<Value>,
-) -> Result<Value> {
+) -> Result<Option<usize>> {
     let kind = if flex {
         LenKind::Compact
     } else {
         LenKind::Int32
     };
     let Some(n) = r.len_prefix(kind, nullable, name)? else {
-        return Ok(Value::Array(None));
+        return Ok(None);
     };
     if n > r.remaining() {
         return Err(SpecError::ArrayTooLong(name));
     }
-    let mut items = Vec::with_capacity(n);
-    for _ in 0..n {
-        items.push(elem(r)?);
-    }
-    Ok(Value::Array(Some(items)))
+    Ok(Some(n))
 }
 
 fn read_prim(
@@ -247,23 +328,23 @@ fn read_prim(
     name: &'static str,
     flex: bool,
     nullable: bool,
-) -> Result<Value> {
+) -> Result<PrimValue> {
     Ok(match p {
-        Prim::Bool => Value::Bool(r.u8()? != 0),
-        Prim::Int8 => Value::I8(r.i8()?),
-        Prim::Int16 => Value::I16(r.i16()?),
-        Prim::Uint16 => Value::U16(r.u16()?),
-        Prim::Int32 => Value::I32(r.i32()?),
-        Prim::Int64 => Value::I64(r.i64()?),
-        Prim::Float64 => Value::F64(r.u64()?),
-        Prim::Uuid => Value::Uuid(r.uuid()?),
+        Prim::Bool => PrimValue::Bool(r.u8()? != 0),
+        Prim::Int8 => PrimValue::I8(r.i8()?),
+        Prim::Int16 => PrimValue::I16(r.i16()?),
+        Prim::Uint16 => PrimValue::U16(r.u16()?),
+        Prim::Int32 => PrimValue::I32(r.i32()?),
+        Prim::Int64 => PrimValue::I64(r.i64()?),
+        Prim::Float64 => PrimValue::F64(r.u64()?),
+        Prim::Uuid => PrimValue::Uuid(r.uuid()?),
         Prim::String => {
             let kind = if flex {
                 LenKind::Compact
             } else {
                 LenKind::Int16
             };
-            Value::Str(match r.len_prefix(kind, nullable, name)? {
+            PrimValue::Str(match r.len_prefix(kind, nullable, name)? {
                 None => None,
                 Some(n) if n > 0x7fff => return Err(SpecError::StringTooLong(name)),
                 Some(n) => {
@@ -288,9 +369,9 @@ fn read_prim(
                 Some(n) => Some(r.take(n)?.to_vec()),
             };
             if p == Prim::Bytes {
-                Value::Bytes(b)
+                PrimValue::Bytes(b)
             } else {
-                Value::Records(b)
+                PrimValue::Records(b)
             }
         }
     })

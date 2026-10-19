@@ -13,3 +13,5 @@ pub mod records;
 pub mod schema;
 pub mod value;
 pub mod wire;
+
+pub use interp::{decode_field, Field, PrimValue};
