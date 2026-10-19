@@ -330,3 +330,72 @@ Bounds were split per concrete length (`_lenN`, `_pP_kK`) instead of the brief's
 **`SegmentedBuf::advance_mut`.** The forwarded `BytesMut` contract is model-checked (`bytesmut_*`). The `SegmentedBuf` wrapper is argued by hand, because Kani cannot handle it. `chunk_mut` calls `current_inline()`, which makes the last segment `Inline`, and returns that segment's spare capacity. Nothing can change the segment list between `chunk_mut` and the caller's `advance_mut` (both take `&mut self`, and the caller only writes into the returned slice). So `advance_mut`'s own `current_inline()` finds the same `Inline` segment and forwards `cnt`, then adds `cnt` to `total_len`. If a caller breaks the contract and calls `advance_mut(cnt > 0)` without `chunk_mut`, it gets either that same segment or a fresh empty `BytesMut`. `BytesMut::advance_mut` panics when `cnt` exceeds spare capacity (bytes 1.12, `panic_advance`), so the result is a panic, not UB. Why Kani cannot handle the wrapper: a `BytesMut` held inside the segment `Vec` has its pointer fields (including the int-tagged `data`) stored in heap memory, which CBMC models as bytes. Even the fully concrete `SegmentedBuf::new(); sb.chunk_mut()` (push + `reserve(8192)`) does not finish propositional reduction in 250s. Every variant tried also timed out: P = 0/2, K = 0/3, unwind 2/3/6, CaDiCaL, `--arrays-uf-always`, `mem::forget`, no read-back. The Z3 backend crashes CBMC (`map::at: key not found`). The same operations on a stack `BytesMut` take 0.8s. Before this work, both unsafe-site harnesses had been reported as FAILED. That was CBMC out-of-memory ("CBMC appears to have run out of memory"), not a failed check, made worse by four orphaned `cbmc` processes from a killed earlier run.
 
 **Task 6 blocker: decode harnesses vs `interp::decode`.** None of the seven decode harnesses terminates, and the input bound is not the cause: a fully concrete 3-byte input does not finish symbolic execution in 240s at unwind(10), and symbolic N = 3 at unwind(4) does not finish in 300s either. `interp::decode` builds and drops a recursive `Value` tree (`Array(Vec<Value>)`, `Struct(Box<StructValue>)`, `unknown_tags: Vec<(u32, Vec<u8>)>`) through heap memory: `read_struct`'s `vec![None; n]` slots, the zip `IntoIter`, and drops on `?` error paths. CBMC loses the enum discriminant through the heap and unrolls `drop_glue::<Value>` to the unwind depth at about 130-150 sites ("Not unwinding recursion drop_glue::<Value>"). The harness-side `mem::forget` of the spec result does not help, because the drops are inside the interpreter. The encode direction is unaffected (`compact_bytes_encode`, `string_encode_ascii_*` pass), because there the harness builds the `StructValue` concretely. The harnesses stay in `src/proofs/framing.rs` as unregistered functions marked BLOCKED. Possible ways to unblock, all outside Task 6 scope: (a) a Value-free spec entry point for one primitive/array field (for example a `pub` `read_prim`-style function over `wire::Reader`), against which the crate decoders can be checked while `interp::decode` keeps using it; (b) Kani stubbing (`-Z stubbing`) of the interpreter's struct plumbing; (c) exhaustive bounded unit tests (crate vs `interp::decode` on every input up to 3 bytes, plus structured length-prefix enumeration) in place of Kani.
+
+## Phase 2 results
+
+### Crate divergences D1-D5
+
+| # | Status | Fixed in |
+|---|---|---|
+| D1 | **fixed**: unsigned/signed varints and varlongs longer than their type are rejected (`ProtoError::VarintTooLong`), as Java does; extra high bits in the final byte are rejected too (`VarintOverflow`, spec S5) | Task 3 (`10f4c97`) |
+| D2 | **fixed**: the generator follows Java's nullable defaults again; `src/` regenerated; `tests/golden_defaults.rs` pins the header defaults | Task 1 (`bd85a66`) |
+| D3 | **fixed**: compact strings longer than 0x7fff are rejected (`StringTooLong`) | Task 4 (`142bf7c`) |
+| D4 | **fixed**: any non-negative nullable-struct marker means present | Task 4 (`142bf7c`) |
+| D5 | **fixed**: array lengths are bounded by the bytes remaining (Java's rule); byte/string reads check the buffer before allocating | Task 4 (`142bf7c`) |
+
+### Golden conformance of the crate (`tests/golden_crate.rs`)
+
+The crate's `RequestKind`/`ResponseKind`/`RequestHeader`/`ResponseHeader` decoders and
+encoders, checked on all 11,760 golden message vectors:
+
+- **checked 11,560, skipped (known divergences) 0, skipped (unstable, not generated) 200.**
+  No failures. Every vector Java wrote (`default`, `random`) decodes, consumes every byte and
+  re-encodes byte for byte. The crate rejects every mutation Java rejects. On every mutation
+  Java accepts, the crate either consumes exactly Java's byte count or rejects it, and in the
+  rejection cases the spec's strict mode also rejects with `Strict(_)`.
+- No new D-ids. `verification/crate_known_divergences.txt` is empty.
+- The first run had 61 failures, all with the same cause. They were in the unstable last
+  versions of Kafka 4.1.0's `"latestVersionUnstable": true` schemas: InitProducerId v6 (14),
+  OffsetCommit v10 (7), OffsetFetch v10 (7), StreamsGroupHeartbeat v0 (16, requests and
+  responses) and StreamsGroupDescribe v0 (17). The crate generator drops these versions on
+  purpose (`protocol_codegen/src/generate_messages/generate.rs:1403-1414`,
+  `valid_versions.without_last()`; with no stable version left, API keys 88 and 89 are not
+  generated at all). The golden generator includes them (`GoldenGen.java:63,73`,
+  `highestSupportedVersion(true)`). Decision: skip them in the test and count them, rather
+  than generate them. Generating them would raise `VERSIONS.max` for OffsetCommit and
+  OffsetFetch, which blink advertises to clients (`blink/src/kafka/metadata.rs:148-149`),
+  while a real 4.1.0 broker only advertises these versions with
+  `unstable.api.versions.enable`. The skip list is `UNSTABLE_NOT_GENERATED` in the test. It
+  covers all 200 vectors at those versions, including Java-rejected mutations, which the
+  crate would also have rejected.
+
+### Kani harnesses
+
+- Task 5: 17/17 SUCCESSFUL, complete proofs (no bound beyond the decoders' own maximum read
+  length; see the table in "Phase 2 proofs" above). These cover the primitives (varint,
+  varlong, zigzag, i16/i32/compact lengths) and the `types.rs` varint wrappers. Each takes
+  0.5-15.5s.
+- Task 6: 18 harnesses SUCCESSFUL: `unsafe_sites` (5 `StrBytes::from_utf8` lengths and 8
+  `BytesMut::advance_mut` contract cases) plus 5 framing encode harnesses. Bounds: up to
+  3-4 bytes, 0.5-16.8s each. `SegmentedBuf::advance_mut` is argued by hand (above).
+- Task 6.5 (`bfdbb11`): to get past the Task 6 decode blocker, the spec gained a Value-free
+  field decoder, `interp::decode_field`, which `interp::decode` reuses. The seven framing
+  decode harnesses were split by length-prefix class into concrete-prefix harnesses
+  (`src/proofs/framing.rs`, `decode_harnesses!`). Their Kani results are not recorded here:
+  the full `cargo kani` run was not part of Task 7. `src/proofs/framing.rs` still contains a
+  `// TEMP-EXPERIMENTS` block (`zz_orig_*`, the original symbolic-length harnesses that do
+  not terminate). It must be removed or filtered out before running the documented
+  `cargo kani --tests` command.
+
+### Downstream: blink
+
+blink pins `proto-kafka 0.19.3` from crates.io. It gets none of these fixes until it upgrades
+to 0.20.0, and that upgrade brings the behaviour changes listed in `CHANGELOG.md` under
+0.20.0:
+- D2 (breaking): `CreatableTopicResult::default()` now has `error_message: Some("")`.
+  blink's CreateTopics responses (`src/kafka/admin.rs`) must set `.with_error_message(None)`
+  explicitly, as Java's broker does.
+- D1/D3/D5: inputs that used to be accepted, or that crashed the process by aborting an
+  allocation, now fail with `ProtoError::{VarintTooLong, VarintOverflow, StringTooLong,
+  ArrayTooLong}`.
+- D4: a nullable-struct marker of `0` now decodes as present.

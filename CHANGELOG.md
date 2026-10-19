@@ -15,6 +15,11 @@
 - The generator no longer emits the deprecated `std::u32::MAX` (now `u32::MAX`), for forward compatibility with newer rustc versions where it fails under `#![deny(warnings)]`; all messages regenerated.
 - **`compression::snappy::decompress` corrupts raw snappy payloads ≥ 16 bytes.** The Xerial magic header probe used `try_get_bytes(16)`, which consumes the bytes from the buffer. If the magic didn't match (raw snappy fallback path), the fallback read from the already-advanced buffer and got truncated data, producing a decompression error. The probe now uses `try_peek_bytes(0..16)` and explicitly consumes the magic bytes only after the match is confirmed. Includes regression test `decompression_fallback_large_payload`. Ported from upstream commit `14d3e104` (PR #149, Steven Le Roux).
 
+### Verification
+
+- New `protocol::primitives` module: the pure, single source of primitive wire semantics, proven equal to the Phase 1 reference spec by Kani (`cargo kani --tests -p proto-kafka --no-default-features --features client,broker`).
+- `tests/golden_crate.rs` checks every request/response decoder and encoder against Kafka 4.1.0's own serializers (golden vectors in `verification/golden`). Versions that Kafka marks `latestVersionUnstable` (InitProducerId v6, OffsetCommit v10, OffsetFetch v10, StreamsGroupHeartbeat v0, StreamsGroupDescribe v0) are skipped because the crate does not generate them.
+
 ## 0.19.2
 
 ### Improvements
