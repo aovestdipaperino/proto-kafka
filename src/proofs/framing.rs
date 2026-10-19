@@ -3,9 +3,12 @@
 //! level (no tagged section); the field-level `flexible` override selects the compact
 //! encoding, exactly as RequestHeader.ClientId does in reverse.
 //!
-//! Decode harnesses compare against `interp::decode_field`, the Value-free field decoder that
-//! `interp::decode` applies to every field (a whole-message `interp::decode` builds a
-//! recursive `Value` tree that CBMC cannot symbolically execute).
+//! Decode harnesses (exploration code) compare against `interp::decode_field`, the Value-free
+//! field decoder that `interp::decode` applies to every field (a whole-message `interp::decode`
+//! builds a recursive `Value` tree that CBMC cannot symbolically execute). They are kept here
+//! for reference, but disabled due to CBMC capacity limits. See docs/FINDINGS.md "Task 6 blocker".
+
+#![allow(dead_code, unused_imports)]
 
 use crate::protocol::types;
 use crate::protocol::{Decoder, Encoder};
