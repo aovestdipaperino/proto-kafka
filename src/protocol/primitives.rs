@@ -65,7 +65,11 @@ pub fn varint_step(st: VarintState, b: u8, max_bytes: u32) -> Result<VarintStep,
         }
         // 32-bit: the 5th byte holds bits 28..31 (mask 0x0f).
         // 64-bit: the 10th byte holds bit 63 (mask 0x01).
-        let allowed: u8 = if max_bytes == UVARINT_MAX_BYTES { 0x0f } else { 0x01 };
+        let allowed: u8 = if max_bytes == UVARINT_MAX_BYTES {
+            0x0f
+        } else {
+            0x01
+        };
         if b & !allowed != 0 {
             return Err(PrimError::VarintOverflow);
         }
@@ -74,7 +78,10 @@ pub fn varint_step(st: VarintState, b: u8, max_bytes: u32) -> Result<VarintStep,
     if b & 0x80 == 0 {
         Ok(VarintStep::Done(value))
     } else {
-        Ok(VarintStep::More(VarintState { value, index: st.index + 1 }))
+        Ok(VarintStep::More(VarintState {
+            value,
+            index: st.index + 1,
+        }))
     }
 }
 

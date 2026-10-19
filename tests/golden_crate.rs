@@ -25,7 +25,10 @@ use std::collections::BTreeSet;
 use std::io::BufRead;
 
 fn hex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn root(p: &str) -> String {
@@ -33,7 +36,12 @@ fn root(p: &str) -> String {
 }
 
 /// Decode with the crate; returns (consumed, re-encoded bytes or None if re-encoding failed).
-fn crate_roundtrip(key: i16, kind: &str, v: i16, bytes: &[u8]) -> Result<(usize, Option<Vec<u8>>), String> {
+fn crate_roundtrip(
+    key: i16,
+    kind: &str,
+    v: i16,
+    bytes: &[u8],
+) -> Result<(usize, Option<Vec<u8>>), String> {
     let mut b = Bytes::copy_from_slice(bytes);
     let mut out = BytesMut::new();
     match kind {
@@ -71,7 +79,10 @@ fn spec_is_strict_reject(key: i16, kind: &str, v: i16, bytes: &[u8]) -> bool {
         _ => find_by_name("ResponseHeader"),
     }
     .expect("schema");
-    matches!(proto_kafka_spec::interp::decode(schema, v, bytes), Err(SpecError::Strict(_)))
+    matches!(
+        proto_kafka_spec::interp::decode(schema, v, bytes),
+        Err(SpecError::Strict(_))
+    )
 }
 
 /// `(api_key, version)` pairs that are the unstable latest version of a Kafka 4.1.0 request
@@ -81,7 +92,8 @@ fn spec_is_strict_reject(key: i16, kind: &str, v: i16, bytes: &[u8]) -> bool {
 const UNSTABLE_NOT_GENERATED: [(i16, i16); 5] = [(22, 6), (8, 10), (9, 10), (88, 0), (89, 0)];
 
 fn known() -> BTreeSet<String> {
-    let text = std::fs::read_to_string(root("verification/crate_known_divergences.txt")).unwrap_or_default();
+    let text = std::fs::read_to_string(root("verification/crate_known_divergences.txt"))
+        .unwrap_or_default();
     text.lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
         .map(|l| l.split_whitespace().take(4).collect::<Vec<_>>().join(" "))
@@ -115,14 +127,20 @@ fn crate_conforms_to_java_golden_vectors() {
         let java_ok = j["ok"].as_bool().unwrap();
         let ours = crate_roundtrip(key, kind, v, &bytes);
         let fail = match (origin, java_ok, &ours) {
-            ("mutated", false, Ok(_)) => Some(format!("Java rejects ({}), crate accepts", j["error"])),
+            ("mutated", false, Ok(_)) => {
+                Some(format!("Java rejects ({}), crate accepts", j["error"]))
+            }
             ("mutated", false, Err(_)) => None,
             ("mutated", true, Ok((n, _))) if *n as u64 == j["consumed"].as_u64().unwrap() => None,
             ("mutated", true, Ok((n, _))) => Some(format!("consumed {n}, Java {}", j["consumed"])),
             ("mutated", true, Err(_)) if spec_is_strict_reject(key, kind, v, &bytes) => None,
             ("mutated", true, Err(e)) => Some(format!("Java accepts, crate rejects: {e}")),
             (_, _, Ok((n, Some(re)))) if *n == bytes.len() && *re == bytes => None,
-            (_, _, Ok((n, re))) => Some(format!("consumed {n}/{}, re-encode equal: {}", bytes.len(), re.as_deref() == Some(&bytes[..]))),
+            (_, _, Ok((n, re))) => Some(format!(
+                "consumed {n}/{}, re-encode equal: {}",
+                bytes.len(),
+                re.as_deref() == Some(&bytes[..])
+            )),
             (_, _, Err(e)) => Some(format!("crate rejects Java-written bytes: {e}")),
         };
         if let Some(f) = fail {
@@ -130,5 +148,15 @@ fn crate_conforms_to_java_golden_vectors() {
         }
     }
     eprintln!("checked {checked}, skipped (known divergences) {skipped}, skipped (unstable, not generated) {unstable}");
-    assert!(failures.is_empty(), "{} failures; first 25:\n{}", failures.len(), failures.iter().take(25).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} failures; first 25:\n{}",
+        failures.len(),
+        failures
+            .iter()
+            .take(25)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 }

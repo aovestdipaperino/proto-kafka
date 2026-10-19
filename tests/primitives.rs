@@ -5,7 +5,10 @@ fn uvarint_decode_known() {
     assert_eq!(read_uvarint(&[0x00]), Ok((0, 1)));
     assert_eq!(read_uvarint(&[0x7f]), Ok((127, 1)));
     assert_eq!(read_uvarint(&[0x80, 0x01]), Ok((128, 2)));
-    assert_eq!(read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x0f, 0xaa]), Ok((u32::MAX, 5)));
+    assert_eq!(
+        read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x0f, 0xaa]),
+        Ok((u32::MAX, 5))
+    );
     assert_eq!(read_uvarint(&[0x80, 0x00]), Ok((0, 2))); // non-minimal accepted, as Java
     assert_eq!(read_uvarint(&[]), Err(PrimError::Eof));
     assert_eq!(read_uvarint(&[0x80]), Err(PrimError::Eof));
@@ -14,16 +17,24 @@ fn uvarint_decode_known() {
 #[test]
 fn uvarint_fifth_byte_rules() {
     // D1: continuation on the 5th byte is rejected (Java: illegalVarintException)
-    assert_eq!(read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x8f, 0x00]), Err(PrimError::VarintTooLong));
+    assert_eq!(
+        read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x8f, 0x00]),
+        Err(PrimError::VarintTooLong)
+    );
     // S5: bits Java silently drops are rejected
-    assert_eq!(read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x1f]), Err(PrimError::VarintOverflow));
+    assert_eq!(
+        read_uvarint(&[0xff, 0xff, 0xff, 0xff, 0x1f]),
+        Err(PrimError::VarintOverflow)
+    );
 }
 
 #[test]
 fn uvarlong_tenth_byte_rules() {
     let max = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
     assert_eq!(read_uvarlong(&max), Ok((u64::MAX, 10)));
-    let cont = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00];
+    let cont = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00,
+    ];
     assert_eq!(read_uvarlong(&cont), Err(PrimError::VarintTooLong));
     let high = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03];
     assert_eq!(read_uvarlong(&high), Err(PrimError::VarintOverflow));
@@ -34,7 +45,19 @@ fn uvarint_encode_and_size() {
     let mut out = [0u8; 5];
     let n = write_uvarint(300, &mut out);
     assert_eq!(&out[..n], &[0xac, 0x02]);
-    for v in [0u32, 1, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152, 268_435_455, 268_435_456, u32::MAX] {
+    for v in [
+        0u32,
+        1,
+        127,
+        128,
+        16_383,
+        16_384,
+        2_097_151,
+        2_097_152,
+        268_435_455,
+        268_435_456,
+        u32::MAX,
+    ] {
         let n = write_uvarint(v, &mut out);
         assert_eq!(uvarint_size(v), n, "{v}");
         assert_eq!(read_uvarint(&out[..n]), Ok((v, n)), "{v}");
@@ -72,7 +95,10 @@ fn length_rules() {
     assert_eq!(compact_len(u32::MAX), -2);
     assert_eq!(compact_len(0x8000_0000), i32::MAX);
     assert_eq!(check_string_len(0x7fff), Ok(()));
-    assert_eq!(check_string_len(0x8000), Err(PrimError::StringTooLong(0x8000)));
+    assert_eq!(
+        check_string_len(0x8000),
+        Err(PrimError::StringTooLong(0x8000))
+    );
     assert_eq!(check_array_len(3, 3), Ok(()));
     assert_eq!(check_array_len(4, 3), Err(PrimError::ArrayTooLong(4, 3)));
 }

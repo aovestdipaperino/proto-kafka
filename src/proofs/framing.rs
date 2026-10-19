@@ -11,8 +11,8 @@ use crate::protocol::types;
 use crate::protocol::{Decoder, Encoder};
 use proto_kafka_spec::interp::{self, decode_field, Field, Mode, PrimValue};
 use proto_kafka_spec::schema::*;
-use proto_kafka_spec::wire::LenKind;
 use proto_kafka_spec::value::{StructValue, Value};
+use proto_kafka_spec::wire::LenKind;
 
 macro_rules! one_field {
     ($name:ident, $ty:expr, $nullable:expr, $compact:expr) => {
@@ -54,10 +54,22 @@ one_field!(CARR_N, FieldType::PrimArray(Prim::Int32), NULL, COMPACT);
 /// field-level semantics `interp::decode` applies to every field; it builds no `Value` tree,
 /// which keeps CBMC's symbolic execution finite (the recursive `Value` drop glue does not).
 fn spec(schema: &'static MessageSchema, input: &[u8]) -> Option<(Field, usize)> {
-    decode_field(Mode::Strict, &schema.root.fields[0], 0, schema.flexible.contains(0), input).ok()
+    decode_field(
+        Mode::Strict,
+        &schema.root.fields[0],
+        0,
+        schema.flexible.contains(0),
+        input,
+    )
+    .ok()
 }
 
-fn check<T>(got: crate::error::Result<T>, consumed: usize, want: Option<(Field, usize)>, to_field: impl Fn(T) -> Field) {
+fn check<T>(
+    got: crate::error::Result<T>,
+    consumed: usize,
+    want: Option<(Field, usize)>,
+    to_field: impl Fn(T) -> Field,
+) {
     match (got, want) {
         (Ok(v), Some((w, n))) => {
             assert_eq!(n, consumed);
@@ -145,31 +157,41 @@ fn truncated_prefix<const MAX: usize>(kind: LenKind, run: fn(&[u8])) {
 fn run_string_nullable(input: &[u8]) {
     let mut s: &[u8] = input;
     let got: crate::error::Result<Option<String>> = types::String.decode(&mut s);
-    check(got, input.len() - s.len(), spec(&STR_N, input), |v| Field::Prim(PrimValue::Str(v.map(String::into_bytes))));
+    check(got, input.len() - s.len(), spec(&STR_N, input), |v| {
+        Field::Prim(PrimValue::Str(v.map(String::into_bytes)))
+    });
 }
 
 fn run_string(input: &[u8]) {
     let mut s: &[u8] = input;
     let got: crate::error::Result<String> = types::String.decode(&mut s);
-    check(got, input.len() - s.len(), spec(&STR, input), |v| Field::Prim(PrimValue::Str(Some(v.into_bytes()))));
+    check(got, input.len() - s.len(), spec(&STR, input), |v| {
+        Field::Prim(PrimValue::Str(Some(v.into_bytes())))
+    });
 }
 
 fn run_compact_string_nullable(input: &[u8]) {
     let mut s: &[u8] = input;
     let got: crate::error::Result<Option<String>> = types::CompactString.decode(&mut s);
-    check(got, input.len() - s.len(), spec(&CSTR_N, input), |v| Field::Prim(PrimValue::Str(v.map(String::into_bytes))));
+    check(got, input.len() - s.len(), spec(&CSTR_N, input), |v| {
+        Field::Prim(PrimValue::Str(v.map(String::into_bytes)))
+    });
 }
 
 fn run_bytes_nullable(input: &[u8]) {
     let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<u8>>> = types::Bytes.decode(&mut s);
-    check(got, input.len() - s.len(), spec(&BYTES_N, input), |v| Field::Prim(PrimValue::Bytes(v)));
+    check(got, input.len() - s.len(), spec(&BYTES_N, input), |v| {
+        Field::Prim(PrimValue::Bytes(v))
+    });
 }
 
 fn run_compact_bytes_nullable(input: &[u8]) {
     let mut s: &[u8] = input;
     let got: crate::error::Result<Option<Vec<u8>>> = types::CompactBytes.decode(&mut s);
-    check(got, input.len() - s.len(), spec(&CBYTES_N, input), |v| Field::Prim(PrimValue::Bytes(v)));
+    check(got, input.len() - s.len(), spec(&CBYTES_N, input), |v| {
+        Field::Prim(PrimValue::Bytes(v))
+    });
 }
 
 fn run_array_int32_nullable(input: &[u8]) {
@@ -182,7 +204,8 @@ fn run_array_int32_nullable(input: &[u8]) {
 
 fn run_compact_array_int32_nullable(input: &[u8]) {
     let mut s: &[u8] = input;
-    let got: crate::error::Result<Option<Vec<i32>>> = types::CompactArray(types::Int32).decode(&mut s);
+    let got: crate::error::Result<Option<Vec<i32>>> =
+        types::CompactArray(types::Int32).decode(&mut s);
     check(got, input.len() - s.len(), spec(&CARR_N, input), |v| {
         Field::PrimArray(v.map(|xs| xs.into_iter().map(PrimValue::I32).collect()))
     });
@@ -215,140 +238,7 @@ macro_rules! decode_harnesses {
 // - Option (b): prove via golden vectors + hand argument (current approach)
 // - Option (c): extract the copy to a pure function amenable to Kani
 
-// decode_harnesses!(10:
-    string_nullable_decode_trunc = (6, Int16, run_string_nullable, trunc),
-    string_nullable_decode_null = (6, Int16, run_string_nullable, null 1),
-    string_nullable_decode_len0 = (6, Int16, run_string_nullable, len 0 1),
-    string_nullable_decode_len1 = (6, Int16, run_string_nullable, len 1 1),
-    string_nullable_decode_len2 = (6, Int16, run_string_nullable, len 2 1),
-    string_nullable_decode_len3 = (6, Int16, run_string_nullable, len 3 1),
-    string_nullable_decode_len4 = (6, Int16, run_string_nullable, len 4 1),
-    string_decode_trunc = (6, Int16, run_string, trunc),
-    string_decode_null = (6, Int16, run_string, null 1),
-    string_decode_len0 = (6, Int16, run_string, len 0 1),
-    string_decode_len1 = (6, Int16, run_string, len 1 1),
-    string_decode_len2 = (6, Int16, run_string, len 2 1),
-    string_decode_len3 = (6, Int16, run_string, len 3 1),
-    string_decode_len4 = (6, Int16, run_string, len 4 1),
-    compact_string_nullable_decode_trunc = (6, Compact, run_compact_string_nullable, trunc),
-    compact_string_nullable_decode_null_m1 = (6, Compact, run_compact_string_nullable, null 1),
-    compact_string_nullable_decode_len0_m1 = (6, Compact, run_compact_string_nullable, len 0 1),
-    compact_string_nullable_decode_len1_m1 = (6, Compact, run_compact_string_nullable, len 1 1),
-    compact_string_nullable_decode_len2_m1 = (6, Compact, run_compact_string_nullable, len 2 1),
-    compact_string_nullable_decode_len3_m1 = (6, Compact, run_compact_string_nullable, len 3 1),
-    compact_string_nullable_decode_len4_m1 = (6, Compact, run_compact_string_nullable, len 4 1),
-    compact_string_nullable_decode_len5_m1 = (6, Compact, run_compact_string_nullable, len 5 1),
-    compact_string_nullable_decode_null_m2 = (6, Compact, run_compact_string_nullable, null 2),
-    compact_string_nullable_decode_len0_m2 = (6, Compact, run_compact_string_nullable, len 0 2),
-    compact_string_nullable_decode_len1_m2 = (6, Compact, run_compact_string_nullable, len 1 2),
-    compact_string_nullable_decode_len2_m2 = (6, Compact, run_compact_string_nullable, len 2 2),
-    compact_string_nullable_decode_len3_m2 = (6, Compact, run_compact_string_nullable, len 3 2),
-    compact_string_nullable_decode_len4_m2 = (6, Compact, run_compact_string_nullable, len 4 2),
-    compact_string_nullable_decode_null_m3 = (6, Compact, run_compact_string_nullable, null 3),
-    compact_string_nullable_decode_len0_m3 = (6, Compact, run_compact_string_nullable, len 0 3),
-    compact_string_nullable_decode_len1_m3 = (6, Compact, run_compact_string_nullable, len 1 3),
-    compact_string_nullable_decode_len2_m3 = (6, Compact, run_compact_string_nullable, len 2 3),
-    compact_string_nullable_decode_len3_m3 = (6, Compact, run_compact_string_nullable, len 3 3),
-    compact_string_nullable_decode_null_m4 = (6, Compact, run_compact_string_nullable, null 4),
-    compact_string_nullable_decode_len0_m4 = (6, Compact, run_compact_string_nullable, len 0 4),
-    compact_string_nullable_decode_len1_m4 = (6, Compact, run_compact_string_nullable, len 1 4),
-    compact_string_nullable_decode_len2_m4 = (6, Compact, run_compact_string_nullable, len 2 4),
-    compact_string_nullable_decode_null_m5 = (6, Compact, run_compact_string_nullable, null 5),
-    compact_string_nullable_decode_len0_m5 = (6, Compact, run_compact_string_nullable, len 0 5),
-    compact_string_nullable_decode_len1_m5 = (6, Compact, run_compact_string_nullable, len 1 5),
-    bytes_nullable_decode_trunc = (7, Int32, run_bytes_nullable, trunc),
-    bytes_nullable_decode_null = (7, Int32, run_bytes_nullable, null 1),
-    bytes_nullable_decode_len0 = (7, Int32, run_bytes_nullable, len 0 1),
-    bytes_nullable_decode_len1 = (7, Int32, run_bytes_nullable, len 1 1),
-    bytes_nullable_decode_len2 = (7, Int32, run_bytes_nullable, len 2 1),
-    bytes_nullable_decode_len3 = (7, Int32, run_bytes_nullable, len 3 1),
-    compact_bytes_nullable_decode_trunc = (6, Compact, run_compact_bytes_nullable, trunc),
-    compact_bytes_nullable_decode_null_m1 = (6, Compact, run_compact_bytes_nullable, null 1),
-    compact_bytes_nullable_decode_len0_m1 = (6, Compact, run_compact_bytes_nullable, len 0 1),
-    compact_bytes_nullable_decode_len1_m1 = (6, Compact, run_compact_bytes_nullable, len 1 1),
-    compact_bytes_nullable_decode_len2_m1 = (6, Compact, run_compact_bytes_nullable, len 2 1),
-    compact_bytes_nullable_decode_len3_m1 = (6, Compact, run_compact_bytes_nullable, len 3 1),
-    compact_bytes_nullable_decode_len4_m1 = (6, Compact, run_compact_bytes_nullable, len 4 1),
-    compact_bytes_nullable_decode_len5_m1 = (6, Compact, run_compact_bytes_nullable, len 5 1),
-    compact_bytes_nullable_decode_null_m2 = (6, Compact, run_compact_bytes_nullable, null 2),
-    compact_bytes_nullable_decode_len0_m2 = (6, Compact, run_compact_bytes_nullable, len 0 2),
-    compact_bytes_nullable_decode_len1_m2 = (6, Compact, run_compact_bytes_nullable, len 1 2),
-    compact_bytes_nullable_decode_len2_m2 = (6, Compact, run_compact_bytes_nullable, len 2 2),
-    compact_bytes_nullable_decode_len3_m2 = (6, Compact, run_compact_bytes_nullable, len 3 2),
-    compact_bytes_nullable_decode_len4_m2 = (6, Compact, run_compact_bytes_nullable, len 4 2),
-    compact_bytes_nullable_decode_null_m3 = (6, Compact, run_compact_bytes_nullable, null 3),
-    compact_bytes_nullable_decode_len0_m3 = (6, Compact, run_compact_bytes_nullable, len 0 3),
-    compact_bytes_nullable_decode_len1_m3 = (6, Compact, run_compact_bytes_nullable, len 1 3),
-    compact_bytes_nullable_decode_len2_m3 = (6, Compact, run_compact_bytes_nullable, len 2 3),
-    compact_bytes_nullable_decode_len3_m3 = (6, Compact, run_compact_bytes_nullable, len 3 3),
-    compact_bytes_nullable_decode_null_m4 = (6, Compact, run_compact_bytes_nullable, null 4),
-    compact_bytes_nullable_decode_len0_m4 = (6, Compact, run_compact_bytes_nullable, len 0 4),
-    compact_bytes_nullable_decode_len1_m4 = (6, Compact, run_compact_bytes_nullable, len 1 4),
-    compact_bytes_nullable_decode_len2_m4 = (6, Compact, run_compact_bytes_nullable, len 2 4),
-    compact_bytes_nullable_decode_null_m5 = (6, Compact, run_compact_bytes_nullable, null 5),
-    compact_bytes_nullable_decode_len0_m5 = (6, Compact, run_compact_bytes_nullable, len 0 5),
-    compact_bytes_nullable_decode_len1_m5 = (6, Compact, run_compact_bytes_nullable, len 1 5),
-);
-
-// decode_harnesses!(14:
-//     array_int32_nullable_decode_trunc = (12, Int32, run_array_int32_nullable, trunc),
-//     array_int32_nullable_decode_null = (12, Int32, run_array_int32_nullable, null 1),
-//     array_int32_nullable_decode_len0 = (12, Int32, run_array_int32_nullable, len 0 1),
-//     array_int32_nullable_decode_len1 = (12, Int32, run_array_int32_nullable, len 1 1),
-//     array_int32_nullable_decode_len2 = (12, Int32, run_array_int32_nullable, len 2 1),
-//     array_int32_nullable_decode_len3 = (12, Int32, run_array_int32_nullable, len 3 1),
-//     array_int32_nullable_decode_len4 = (12, Int32, run_array_int32_nullable, len 4 1),
-//     array_int32_nullable_decode_len5 = (12, Int32, run_array_int32_nullable, len 5 1),
-//     array_int32_nullable_decode_len6 = (12, Int32, run_array_int32_nullable, len 6 1),
-//     array_int32_nullable_decode_len7 = (12, Int32, run_array_int32_nullable, len 7 1),
-//     array_int32_nullable_decode_len8 = (12, Int32, run_array_int32_nullable, len 8 1),
-//     compact_array_int32_nullable_decode_trunc = (10, Compact, run_compact_array_int32_nullable, trunc),
-//     compact_array_int32_nullable_decode_null_m1 = (10, Compact, run_compact_array_int32_nullable, null 1),
-//     compact_array_int32_nullable_decode_len0_m1 = (10, Compact, run_compact_array_int32_nullable, len 0 1),
-//     compact_array_int32_nullable_decode_len1_m1 = (10, Compact, run_compact_array_int32_nullable, len 1 1),
-//     compact_array_int32_nullable_decode_len2_m1 = (10, Compact, run_compact_array_int32_nullable, len 2 1),
-//     compact_array_int32_nullable_decode_len3_m1 = (10, Compact, run_compact_array_int32_nullable, len 3 1),
-//     compact_array_int32_nullable_decode_len4_m1 = (10, Compact, run_compact_array_int32_nullable, len 4 1),
-//     compact_array_int32_nullable_decode_len5_m1 = (10, Compact, run_compact_array_int32_nullable, len 5 1),
-//     compact_array_int32_nullable_decode_len6_m1 = (10, Compact, run_compact_array_int32_nullable, len 6 1),
-//     compact_array_int32_nullable_decode_len7_m1 = (10, Compact, run_compact_array_int32_nullable, len 7 1),
-//     compact_array_int32_nullable_decode_len8_m1 = (10, Compact, run_compact_array_int32_nullable, len 8 1),
-//     compact_array_int32_nullable_decode_len9_m1 = (10, Compact, run_compact_array_int32_nullable, len 9 1),
-//     compact_array_int32_nullable_decode_null_m2 = (10, Compact, run_compact_array_int32_nullable, null 2),
-//     compact_array_int32_nullable_decode_len0_m2 = (10, Compact, run_compact_array_int32_nullable, len 0 2),
-//     compact_array_int32_nullable_decode_len1_m2 = (10, Compact, run_compact_array_int32_nullable, len 1 2),
-//     compact_array_int32_nullable_decode_len2_m2 = (10, Compact, run_compact_array_int32_nullable, len 2 2),
-//     compact_array_int32_nullable_decode_len3_m2 = (10, Compact, run_compact_array_int32_nullable, len 3 2),
-//     compact_array_int32_nullable_decode_len4_m2 = (10, Compact, run_compact_array_int32_nullable, len 4 2),
-//     compact_array_int32_nullable_decode_len5_m2 = (10, Compact, run_compact_array_int32_nullable, len 5 2),
-//     compact_array_int32_nullable_decode_len6_m2 = (10, Compact, run_compact_array_int32_nullable, len 6 2),
-//     compact_array_int32_nullable_decode_len7_m2 = (10, Compact, run_compact_array_int32_nullable, len 7 2),
-//     compact_array_int32_nullable_decode_len8_m2 = (10, Compact, run_compact_array_int32_nullable, len 8 2),
-//     compact_array_int32_nullable_decode_null_m3 = (10, Compact, run_compact_array_int32_nullable, null 3),
-//     compact_array_int32_nullable_decode_len0_m3 = (10, Compact, run_compact_array_int32_nullable, len 0 3),
-//     compact_array_int32_nullable_decode_len1_m3 = (10, Compact, run_compact_array_int32_nullable, len 1 3),
-//     compact_array_int32_nullable_decode_len2_m3 = (10, Compact, run_compact_array_int32_nullable, len 2 3),
-//     compact_array_int32_nullable_decode_len3_m3 = (10, Compact, run_compact_array_int32_nullable, len 3 3),
-//     compact_array_int32_nullable_decode_len4_m3 = (10, Compact, run_compact_array_int32_nullable, len 4 3),
-//     compact_array_int32_nullable_decode_len5_m3 = (10, Compact, run_compact_array_int32_nullable, len 5 3),
-//     compact_array_int32_nullable_decode_len6_m3 = (10, Compact, run_compact_array_int32_nullable, len 6 3),
-//     compact_array_int32_nullable_decode_len7_m3 = (10, Compact, run_compact_array_int32_nullable, len 7 3),
-//     compact_array_int32_nullable_decode_null_m4 = (10, Compact, run_compact_array_int32_nullable, null 4),
-//     compact_array_int32_nullable_decode_len0_m4 = (10, Compact, run_compact_array_int32_nullable, len 0 4),
-//     compact_array_int32_nullable_decode_len1_m4 = (10, Compact, run_compact_array_int32_nullable, len 1 4),
-//     compact_array_int32_nullable_decode_len2_m4 = (10, Compact, run_compact_array_int32_nullable, len 2 4),
-//     compact_array_int32_nullable_decode_len3_m4 = (10, Compact, run_compact_array_int32_nullable, len 3 4),
-//     compact_array_int32_nullable_decode_len4_m4 = (10, Compact, run_compact_array_int32_nullable, len 4 4),
-//     compact_array_int32_nullable_decode_len5_m4 = (10, Compact, run_compact_array_int32_nullable, len 5 4),
-//     compact_array_int32_nullable_decode_len6_m4 = (10, Compact, run_compact_array_int32_nullable, len 6 4),
-//     compact_array_int32_nullable_decode_null_m5 = (10, Compact, run_compact_array_int32_nullable, null 5),
-//     compact_array_int32_nullable_decode_len0_m5 = (10, Compact, run_compact_array_int32_nullable, len 0 5),
-//     compact_array_int32_nullable_decode_len1_m5 = (10, Compact, run_compact_array_int32_nullable, len 1 5),
-//     compact_array_int32_nullable_decode_len2_m5 = (10, Compact, run_compact_array_int32_nullable, len 2 5),
-//     compact_array_int32_nullable_decode_len3_m5 = (10, Compact, run_compact_array_int32_nullable, len 3 5),
-//     compact_array_int32_nullable_decode_len4_m5 = (10, Compact, run_compact_array_int32_nullable, len 4 5),
-//     compact_array_int32_nullable_decode_len5_m5 = (10, Compact, run_compact_array_int32_nullable, len 5 5),
-// );
+// Decode harnesses disabled (see BLOCKED comment above).
 
 /// Encode side: for every nullable byte string of up to 3 bytes, the crate's encoding equals
 /// the spec's.
@@ -359,10 +249,17 @@ fn compact_bytes_encode() {
     let len: usize = kani::any();
     kani::assume(len <= 3);
     let is_null: bool = kani::any();
-    let v: Option<Vec<u8>> = if is_null { None } else { Some(data[..len].to_vec()) };
+    let v: Option<Vec<u8>> = if is_null {
+        None
+    } else {
+        Some(data[..len].to_vec())
+    };
     let mut buf: Vec<u8> = Vec::new();
     types::CompactBytes.encode(&mut buf, &v).unwrap();
-    let sv = StructValue { fields: vec![("V", Value::Bytes(v))], unknown_tags: vec![] };
+    let sv = StructValue {
+        fields: vec![("V", Value::Bytes(v))],
+        unknown_tags: vec![],
+    };
     assert_eq!(buf, interp::encode(&CBYTES_N, 0, &sv).unwrap());
 }
 
@@ -375,7 +272,10 @@ fn string_encode_ascii_n<const N: usize>() {
     let s = String::from_utf8(data.to_vec()).unwrap();
     let mut buf: Vec<u8> = Vec::new();
     types::String.encode(&mut buf, &s).unwrap();
-    let sv = StructValue { fields: vec![("V", Value::Str(Some(s.into_bytes())))], unknown_tags: vec![] };
+    let sv = StructValue {
+        fields: vec![("V", Value::Str(Some(s.into_bytes())))],
+        unknown_tags: vec![],
+    };
     assert_eq!(buf, interp::encode(&STR, 0, &sv).unwrap());
 }
 
@@ -395,8 +295,3 @@ string_encode_harness!(
     string_encode_ascii_len2 = 2,
     string_encode_ascii_len3 = 3,
 );
-
-
-
-
-

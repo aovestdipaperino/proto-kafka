@@ -31,7 +31,10 @@ fn unsigned_varlong_wrapper_decode() {
     let bytes: [u8; 11] = kani::any();
     let len: usize = kani::any();
     kani::assume(len <= 11);
-    assert_eq!(wrap_u64(&bytes[..len]), p::read_uvarlong(&bytes[..len]).ok());
+    assert_eq!(
+        wrap_u64(&bytes[..len]),
+        p::read_uvarlong(&bytes[..len]).ok()
+    );
 }
 
 #[kani::proof]
@@ -66,7 +69,9 @@ fn varint_wrapper_decode() {
     kani::assume(len <= 6);
     let mut s: &[u8] = &bytes[..len];
     let r: crate::error::Result<i32> = types::VarInt.decode(&mut s);
-    let want = p::read_uvarint(&bytes[..len]).ok().map(|(u, n)| (p::zigzag_decode32(u), n));
+    let want = p::read_uvarint(&bytes[..len])
+        .ok()
+        .map(|(u, n)| (p::zigzag_decode32(u), n));
     assert_eq!(r.ok().map(|v| (v, len - s.len())), want);
 }
 
@@ -78,6 +83,8 @@ fn varlong_wrapper_decode() {
     kani::assume(len <= 11);
     let mut s: &[u8] = &bytes[..len];
     let r: crate::error::Result<i64> = types::VarLong.decode(&mut s);
-    let want = p::read_uvarlong(&bytes[..len]).ok().map(|(u, n)| (p::zigzag_decode64(u), n));
+    let want = p::read_uvarlong(&bytes[..len])
+        .ok()
+        .map(|(u, n)| (p::zigzag_decode64(u), n));
     assert_eq!(r.ok().map(|v| (v, len - s.len())), want);
 }

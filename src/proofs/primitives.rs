@@ -44,7 +44,9 @@ fn varint_signed_decode_conforms() {
     let input = &bytes[..len];
     let mut r = Reader::new(input);
     let spec = r.varint().ok().map(|v| (v, r.pos()));
-    let ours = p::read_uvarint(input).ok().map(|(u, n)| (p::zigzag_decode32(u), n));
+    let ours = p::read_uvarint(input)
+        .ok()
+        .map(|(u, n)| (p::zigzag_decode32(u), n));
     assert_eq!(ours, spec);
 }
 
@@ -57,7 +59,9 @@ fn varlong_signed_decode_conforms() {
     let input = &bytes[..len];
     let mut r = Reader::new(input);
     let spec = r.varlong().ok().map(|v| (v, r.pos()));
-    let ours = p::read_uvarlong(input).ok().map(|(u, n)| (p::zigzag_decode64(u), n));
+    let ours = p::read_uvarlong(input)
+        .ok()
+        .map(|(u, n)| (p::zigzag_decode64(u), n));
     assert_eq!(ours, spec);
 }
 
@@ -126,14 +130,20 @@ fn spec_len(bytes: &[u8], kind: LenKind, nullable: bool) -> Option<Option<usize>
 fn int16_length_conforms() {
     let raw: i16 = kani::any();
     let nullable: bool = kani::any();
-    assert_eq!(ours_len(i32::from(raw), nullable), spec_len(&raw.to_be_bytes(), LenKind::Int16, nullable));
+    assert_eq!(
+        ours_len(i32::from(raw), nullable),
+        spec_len(&raw.to_be_bytes(), LenKind::Int16, nullable)
+    );
 }
 
 #[kani::proof]
 fn int32_length_conforms() {
     let raw: i32 = kani::any();
     let nullable: bool = kani::any();
-    assert_eq!(ours_len(raw, nullable), spec_len(&raw.to_be_bytes(), LenKind::Int32, nullable));
+    assert_eq!(
+        ours_len(raw, nullable),
+        spec_len(&raw.to_be_bytes(), LenKind::Int32, nullable)
+    );
 }
 
 #[kani::proof]
@@ -144,5 +154,8 @@ fn compact_length_conforms() {
     let mut w = Writer::new();
     w.uvarint(raw);
     let b = w.into_bytes();
-    assert_eq!(ours_len(p::compact_len(raw), nullable), spec_len(&b, LenKind::Compact, nullable));
+    assert_eq!(
+        ours_len(p::compact_len(raw), nullable),
+        spec_len(&b, LenKind::Compact, nullable)
+    );
 }

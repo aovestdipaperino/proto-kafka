@@ -108,7 +108,9 @@ fn read_varint<B: ByteBuf>(buf: &mut B, max_bytes: u32) -> Result<u64> {
     let mut st = primitives::VARINT_START;
     loop {
         let b = buf.try_get_u8()?;
-        match primitives::varint_step(st, b, max_bytes).map_err(|e| ProtoError::from_prim(e, "varint"))? {
+        match primitives::varint_step(st, b, max_bytes)
+            .map_err(|e| ProtoError::from_prim(e, "varint"))?
+        {
             VarintStep::Done(v) => return Ok(v),
             VarintStep::More(next) => st = next,
         }
@@ -127,7 +129,8 @@ fn decode_len_i32<B: ByteBuf>(buf: &mut B, field: &'static str) -> Result<Option
 
 fn decode_len_compact<B: ByteBuf>(buf: &mut B, field: &'static str) -> Result<Option<usize>> {
     let raw: u32 = UnsignedVarInt.decode(buf)?;
-    primitives::interpret_len(primitives::compact_len(raw)).map_err(|e| ProtoError::from_prim(e, field))
+    primitives::interpret_len(primitives::compact_len(raw))
+        .map_err(|e| ProtoError::from_prim(e, field))
 }
 
 fn check_string(len: usize, field: &'static str) -> Result<()> {
@@ -1250,13 +1253,21 @@ mod tests {
 
     #[test]
     fn varint_fifth_byte_high_bits_rejected() {
-        assert!(matches!(decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x1f]), Err(ProtoError::VarintOverflow)));
-        assert_eq!(decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x0f]).unwrap(), (u32::MAX, 5));
+        assert!(matches!(
+            decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x1f]),
+            Err(ProtoError::VarintOverflow)
+        ));
+        assert_eq!(
+            decode_u32(&[0xff, 0xff, 0xff, 0xff, 0x0f]).unwrap(),
+            (u32::MAX, 5)
+        );
     }
 
     #[test]
     fn varlong_tenth_byte_rules() {
-        let mut cont: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00];
+        let mut cont: &[u8] = &[
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x00,
+        ];
         let r: Result<u64> = UnsignedVarLong.decode(&mut cont);
         assert!(matches!(r, Err(ProtoError::VarintTooLong)));
         let mut high: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03];
@@ -1289,7 +1300,13 @@ mod tests {
 
     impl ByteBuf for TwoChunks {
         fn peek_bytes(&mut self, r: std::ops::Range<usize>) -> bytes::Bytes {
-            let all: Vec<u8> = self.a.iter().chain(&self.b).skip(self.pos).copied().collect();
+            let all: Vec<u8> = self
+                .a
+                .iter()
+                .chain(&self.b)
+                .skip(self.pos)
+                .copied()
+                .collect();
             bytes::Bytes::copy_from_slice(&all[r])
         }
         fn get_bytes(&mut self, size: usize) -> bytes::Bytes {
@@ -1302,7 +1319,11 @@ mod tests {
     #[test]
     fn varint_across_chunk_boundary() {
         // 300 = [0xac, 0x02]; the first byte is in chunk `a`, the second in chunk `b`.
-        let mut buf = TwoChunks { a: vec![0xac], b: vec![0x02, 0x07], pos: 0 };
+        let mut buf = TwoChunks {
+            a: vec![0xac],
+            b: vec![0x02, 0x07],
+            pos: 0,
+        };
         let v: u32 = UnsignedVarInt.decode(&mut buf).unwrap();
         assert_eq!((v, bytes::Buf::remaining(&buf)), (300, 1));
     }
@@ -1334,10 +1355,15 @@ mod tests {
         let r: Result<(Option<std::string::String>, usize)> = dec(&CompactString, &[0x01]);
         assert_eq!(r.unwrap(), (Some(std::string::String::new()), 1));
         // raw 0xFFFFFFFF => Java int -1, minus 1 => -2: rejected (spec S1)
-        let r: Result<(Option<Vec<u8>>, usize)> = dec(&CompactBytes, &[0xff, 0xff, 0xff, 0xff, 0x0f]);
-        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -2, .. })));
+        let r: Result<(Option<Vec<u8>>, usize)> =
+            dec(&CompactBytes, &[0xff, 0xff, 0xff, 0xff, 0x0f]);
+        assert!(matches!(
+            r,
+            Err(ProtoError::NegativeLength { value: -2, .. })
+        ));
         // raw 0x80000000 => length i32::MAX: string too long (D3), before any allocation
-        let r: Result<(Option<std::string::String>, usize)> = dec(&CompactString, &[0x80, 0x80, 0x80, 0x80, 0x08]);
+        let r: Result<(Option<std::string::String>, usize)> =
+            dec(&CompactString, &[0x80, 0x80, 0x80, 0x80, 0x08]);
         assert!(matches!(r, Err(ProtoError::StringTooLong { .. })));
     }
 
@@ -1347,31 +1373,54 @@ mod tests {
         let mut input = vec![0x81, 0x80, 0x02]; // uvarint 0x8001 => length 0x8000
         input.extend(std::iter::repeat_n(b'a', 0x8000));
         let r: Result<(std::string::String, usize)> = dec(&CompactString, &input);
-        assert!(matches!(r, Err(ProtoError::StringTooLong { len: 0x8000, .. })));
+        assert!(matches!(
+            r,
+            Err(ProtoError::StringTooLong { len: 0x8000, .. })
+        ));
     }
 
     #[test]
     fn non_nullable_null_still_errors() {
         let r: Result<(std::string::String, usize)> = dec(&String, &[0xff, 0xff]);
-        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+        assert!(matches!(
+            r,
+            Err(ProtoError::NegativeLength { value: -1, .. })
+        ));
         let r: Result<(Vec<u8>, usize)> = dec(&CompactBytes, &[0x00]);
-        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+        assert!(matches!(
+            r,
+            Err(ProtoError::NegativeLength { value: -1, .. })
+        ));
         let r: Result<(Vec<i32>, usize)> = dec(&Array(Int32), &[0xff, 0xff, 0xff, 0xff]);
-        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -1, .. })));
+        assert!(matches!(
+            r,
+            Err(ProtoError::NegativeLength { value: -1, .. })
+        ));
     }
 
     #[test]
     fn negative_length_below_minus_one_rejected() {
         let r: Result<(Option<std::string::String>, usize)> = dec(&String, &[0xff, 0xfe]);
-        assert!(matches!(r, Err(ProtoError::NegativeLength { value: -2, .. })));
+        assert!(matches!(
+            r,
+            Err(ProtoError::NegativeLength { value: -2, .. })
+        ));
     }
 
     #[test]
     fn hostile_lengths_fail_fast() {
         // D5: each of these used to allocate the declared length before reading.
         let r: Result<(Option<Vec<i32>>, usize)> = dec(&Array(Int32), &[0x7f, 0xff, 0xff, 0xff]);
-        assert!(matches!(r, Err(ProtoError::ArrayTooLong { len: 0x7fff_ffff, remaining: 0, .. })));
-        let r: Result<(Option<Vec<i32>>, usize)> = dec(&CompactArray(Int32), &[0xff, 0xff, 0xff, 0xff, 0x07]);
+        assert!(matches!(
+            r,
+            Err(ProtoError::ArrayTooLong {
+                len: 0x7fff_ffff,
+                remaining: 0,
+                ..
+            })
+        ));
+        let r: Result<(Option<Vec<i32>>, usize)> =
+            dec(&CompactArray(Int32), &[0xff, 0xff, 0xff, 0xff, 0x07]);
         assert!(matches!(r, Err(ProtoError::ArrayTooLong { .. })));
         // Bytes/strings: the buffer check happens before any copy, so these fail with the
         // crate's not-enough-bytes error instead of allocating 2 GiB / 32 KiB first.
@@ -1385,9 +1434,22 @@ mod tests {
     fn zero_size_elements_still_bounded_by_remaining() {
         // An array of 3 empty compact arrays would fit in 3 bytes; 4 declared elements with
         // 3 bytes left is rejected up front, as Java does ("Tried to allocate a collection").
-        let r: Result<(Vec<Vec<i32>>, usize)> = dec(&CompactArray(CompactArray(Int32)), &[0x05, 0x01, 0x01, 0x01]);
-        assert!(matches!(r, Err(ProtoError::ArrayTooLong { len: 4, remaining: 3, .. })));
-        let r: Result<(Vec<Vec<i32>>, usize)> = dec(&CompactArray(CompactArray(Int32)), &[0x04, 0x01, 0x01, 0x01]);
+        let r: Result<(Vec<Vec<i32>>, usize)> = dec(
+            &CompactArray(CompactArray(Int32)),
+            &[0x05, 0x01, 0x01, 0x01],
+        );
+        assert!(matches!(
+            r,
+            Err(ProtoError::ArrayTooLong {
+                len: 4,
+                remaining: 3,
+                ..
+            })
+        ));
+        let r: Result<(Vec<Vec<i32>>, usize)> = dec(
+            &CompactArray(CompactArray(Int32)),
+            &[0x04, 0x01, 0x01, 0x01],
+        );
         assert_eq!(r.unwrap(), (vec![vec![], vec![], vec![]], 4));
     }
 
@@ -1401,7 +1463,13 @@ mod tests {
                 Ok(One(Int8.decode(buf)?))
             }
         }
-        for (marker, want) in [(1u8, Some(One(9))), (0, Some(One(9))), (2, Some(One(9))), (0xff, None), (0x80, None)] {
+        for (marker, want) in [
+            (1u8, Some(One(9))),
+            (0, Some(One(9))),
+            (2, Some(One(9))),
+            (0xff, None),
+            (0x80, None),
+        ] {
             let mut input: &[u8] = &[marker, 9];
             let got: Option<One> = OptionStruct { version: 0 }.decode(&mut input).unwrap();
             assert_eq!(got, want, "marker {marker:#x}");

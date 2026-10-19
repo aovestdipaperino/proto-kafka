@@ -543,15 +543,25 @@ pub enum ProtoError {
 
 impl ProtoError {
     /// Converts a primitive-codec error, attaching the field it occurred in.
-    pub(crate) fn from_prim(e: crate::protocol::primitives::PrimError, field: &'static str) -> Self {
+    pub(crate) fn from_prim(
+        e: crate::protocol::primitives::PrimError,
+        field: &'static str,
+    ) -> Self {
         use crate::protocol::primitives::PrimError;
         match e {
             PrimError::Eof => ProtoError::NotEnoughBytes,
             PrimError::VarintTooLong => ProtoError::VarintTooLong,
             PrimError::VarintOverflow => ProtoError::VarintOverflow,
-            PrimError::NegativeLength(v) => ProtoError::NegativeLength { field, value: i64::from(v) },
+            PrimError::NegativeLength(v) => ProtoError::NegativeLength {
+                field,
+                value: i64::from(v),
+            },
             PrimError::StringTooLong(len) => ProtoError::StringTooLong { field, len },
-            PrimError::ArrayTooLong(len, remaining) => ProtoError::ArrayTooLong { field, len, remaining },
+            PrimError::ArrayTooLong(len, remaining) => ProtoError::ArrayTooLong {
+                field,
+                len,
+                remaining,
+            },
         }
     }
 }

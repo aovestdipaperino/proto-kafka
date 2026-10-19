@@ -246,7 +246,12 @@ pub fn decode_field(
     Ok((v, r.pos()))
 }
 
-fn field_head(r: &mut Reader<'_>, f: &FieldDesc, version: i16, msg_flexible: bool) -> Result<Field> {
+fn field_head(
+    r: &mut Reader<'_>,
+    f: &FieldDesc,
+    version: i16,
+    msg_flexible: bool,
+) -> Result<Field> {
     let flex = field_flexible(f, version, msg_flexible);
     let nullable = f.nullable.contains(version);
     match f.ty {

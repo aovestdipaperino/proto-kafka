@@ -116,10 +116,10 @@ pub mod error;
 pub mod header_io;
 #[allow(clippy::all, clippy::pedantic, redundant_imports)]
 pub mod messages;
-pub mod protocol;
-pub mod records;
 #[cfg(all(kani, test))]
 mod proofs;
+pub mod protocol;
+pub mod records;
 
 pub use error::{ProtoError, ResponseError};
 pub use indexmap;
