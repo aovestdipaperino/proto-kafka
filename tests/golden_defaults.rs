@@ -1,6 +1,8 @@
 //! D2 regression: default-constructed headers encode exactly as Kafka 4.1.0's Java
-//! defaults (golden vectors from verification/golden). Before regeneration the stale
-//! generated code encoded nullable defaults as "" instead of null.
+//! defaults (golden vectors from verification/golden). The D2 fix ensures nullable fields
+//! use Java's defaults: "" for String, 0 for numeric types, [] for arrays/bytes, and null
+//! only when the schema explicitly sets `"default": null`. The regenerated generated code now
+//! matches Java instead of the old reversed behavior.
 
 use bytes::BytesMut;
 use proto_kafka::messages::{RequestHeader, ResponseHeader};

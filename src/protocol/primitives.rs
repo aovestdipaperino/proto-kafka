@@ -57,7 +57,10 @@ pub enum VarintStep {
 }
 
 /// Feeds one byte of an unsigned varint of at most `max_bytes` bytes
-/// ([`UVARINT_MAX_BYTES`] or [`UVARLONG_MAX_BYTES`]).
+/// ([`UVARINT_MAX_BYTES`] or [`UVARLONG_MAX_BYTES`]). The byte at `st.index + 1 == max_bytes`
+/// is the final byte; it must have no continuation bit and fit within the allowed bits
+/// (0x0f for 32-bit varints, 0x01 for 64-bit). Designed for use by both `read_uvarint` and
+/// `read_uvarlong`, and public for Kani proofs.
 pub fn varint_step(st: VarintState, b: u8, max_bytes: u32) -> Result<VarintStep, PrimError> {
     if st.index + 1 == max_bytes {
         if b & 0x80 != 0 {
