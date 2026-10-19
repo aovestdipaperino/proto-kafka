@@ -84,7 +84,7 @@ impl Encodable for AlterConfigsRequest {
         types::Boolean.encode(buf, &self.validate_only)?;
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -107,7 +107,7 @@ impl Encodable for AlterConfigsRequest {
         total_size += types::Boolean.compute_size(&self.validate_only)?;
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -254,7 +254,7 @@ impl Encodable for AlterConfigsResource {
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -282,7 +282,7 @@ impl Encodable for AlterConfigsResource {
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -421,7 +421,7 @@ impl Encodable for AlterableConfig {
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -447,7 +447,7 @@ impl Encodable for AlterableConfig {
         }
         if version >= 2 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

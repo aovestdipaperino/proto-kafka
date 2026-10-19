@@ -101,7 +101,7 @@ impl Encodable for ListGroupsResponse {
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -127,7 +127,7 @@ impl Encodable for ListGroupsResponse {
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -300,7 +300,7 @@ impl Encodable for ListedGroup {
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -332,7 +332,7 @@ impl Encodable for ListedGroup {
         }
         if version >= 3 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

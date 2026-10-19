@@ -108,7 +108,7 @@ impl Encodable for LeaderChangeMessage {
         types::CompactArray(types::Struct { version }).encode(buf, &self.voters)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.granting_voters)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -127,7 +127,7 @@ impl Encodable for LeaderChangeMessage {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.granting_voters)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -256,7 +256,7 @@ impl Encodable for Voter {
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -281,7 +281,7 @@ impl Encodable for Voter {
             }
         }
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

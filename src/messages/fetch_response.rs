@@ -80,7 +80,7 @@ impl Encodable for AbortedTransaction {
         types::Int64.encode(buf, &self.first_offset)?;
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -98,7 +98,7 @@ impl Encodable for AbortedTransaction {
         total_size += types::Int64.compute_size(&self.first_offset)?;
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -236,7 +236,7 @@ impl Encodable for EpochEndOffset {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -272,7 +272,7 @@ impl Encodable for EpochEndOffset {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -464,7 +464,7 @@ impl Encodable for FetchResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -514,7 +514,7 @@ impl Encodable for FetchResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -705,7 +705,7 @@ impl Encodable for FetchableTopicResponse {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -737,7 +737,7 @@ impl Encodable for FetchableTopicResponse {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -894,7 +894,7 @@ impl Encodable for LeaderIdAndEpoch {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -930,7 +930,7 @@ impl Encodable for LeaderIdAndEpoch {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1124,7 +1124,7 @@ impl Encodable for NodeEndpoint {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1180,7 +1180,7 @@ impl Encodable for NodeEndpoint {
         }
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1483,7 +1483,7 @@ impl Encodable for PartitionData {
             if &self.snapshot_id != &Default::default() {
                 num_tagged_fields += 1;
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1546,7 +1546,7 @@ impl Encodable for PartitionData {
             if &self.snapshot_id != &Default::default() {
                 num_tagged_fields += 1;
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1740,7 +1740,7 @@ impl Encodable for SnapshotId {
         types::Int32.encode(buf, &self.epoch)?;
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1758,7 +1758,7 @@ impl Encodable for SnapshotId {
         total_size += types::Int32.compute_size(&self.epoch)?;
         if version >= 12 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

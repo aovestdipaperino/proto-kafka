@@ -79,7 +79,7 @@ impl Encodable for KRaftVersionFeature {
         types::Int16.encode(buf, &self.min_supported_version)?;
         types::Int16.encode(buf, &self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -95,7 +95,7 @@ impl Encodable for KRaftVersionFeature {
         total_size += types::Int16.compute_size(&self.min_supported_version)?;
         total_size += types::Int16.compute_size(&self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -226,7 +226,7 @@ impl Encodable for Listener {
         types::CompactString.encode(buf, &self.host)?;
         types::UInt16.encode(buf, &self.port)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -243,7 +243,7 @@ impl Encodable for Listener {
         total_size += types::CompactString.compute_size(&self.host)?;
         total_size += types::UInt16.compute_size(&self.port)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -422,7 +422,7 @@ impl Encodable for UpdateRaftVoterRequest {
         types::CompactArray(types::Struct { version }).encode(buf, &self.listeners)?;
         types::Struct { version }.encode(buf, &self.k_raft_version_feature)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -443,7 +443,7 @@ impl Encodable for UpdateRaftVoterRequest {
             types::CompactArray(types::Struct { version }).compute_size(&self.listeners)?;
         total_size += types::Struct { version }.compute_size(&self.k_raft_version_feature)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

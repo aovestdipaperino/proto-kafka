@@ -80,7 +80,7 @@ impl Encodable for AcknowledgePartition {
         types::CompactArray(types::Struct { version })
             .encode(buf, &self.acknowledgement_batches)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -97,7 +97,7 @@ impl Encodable for AcknowledgePartition {
         total_size += types::CompactArray(types::Struct { version })
             .compute_size(&self.acknowledgement_batches)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -213,7 +213,7 @@ impl Encodable for AcknowledgeTopic {
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -230,7 +230,7 @@ impl Encodable for AcknowledgeTopic {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -361,7 +361,7 @@ impl Encodable for AcknowledgementBatch {
         types::Int64.encode(buf, &self.last_offset)?;
         types::CompactArray(types::Int8).encode(buf, &self.acknowledge_types)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -378,7 +378,7 @@ impl Encodable for AcknowledgementBatch {
         total_size += types::Int64.compute_size(&self.last_offset)?;
         total_size += types::CompactArray(types::Int8).compute_size(&self.acknowledge_types)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -527,7 +527,7 @@ impl Encodable for ShareAcknowledgeRequest {
         types::Int32.encode(buf, &self.share_session_epoch)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -545,7 +545,7 @@ impl Encodable for ShareAcknowledgeRequest {
         total_size += types::Int32.compute_size(&self.share_session_epoch)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

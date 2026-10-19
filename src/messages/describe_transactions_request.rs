@@ -64,7 +64,7 @@ impl Encodable for DescribeTransactionsRequest {
         }
         types::CompactArray(types::CompactString).encode(buf, &self.transactional_ids)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -80,7 +80,7 @@ impl Encodable for DescribeTransactionsRequest {
         total_size +=
             types::CompactArray(types::CompactString).compute_size(&self.transactional_ids)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

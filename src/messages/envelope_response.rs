@@ -79,7 +79,7 @@ impl Encodable for EnvelopeResponse {
         types::CompactBytes.encode(buf, &self.response_data)?;
         types::Int16.encode(buf, &self.error_code)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -95,7 +95,7 @@ impl Encodable for EnvelopeResponse {
         total_size += types::CompactBytes.compute_size(&self.response_data)?;
         total_size += types::Int16.compute_size(&self.error_code)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

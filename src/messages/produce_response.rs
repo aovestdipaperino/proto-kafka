@@ -102,7 +102,7 @@ impl Encodable for BatchIndexAndErrorMessage {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -142,7 +142,7 @@ impl Encodable for BatchIndexAndErrorMessage {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -292,7 +292,7 @@ impl Encodable for LeaderIdAndEpoch {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -328,7 +328,7 @@ impl Encodable for LeaderIdAndEpoch {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -522,7 +522,7 @@ impl Encodable for NodeEndpoint {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -578,7 +578,7 @@ impl Encodable for NodeEndpoint {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -828,7 +828,7 @@ impl Encodable for PartitionProduceResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -876,7 +876,7 @@ impl Encodable for PartitionProduceResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1079,7 +1079,7 @@ impl Encodable for ProduceResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1116,7 +1116,7 @@ impl Encodable for ProduceResponse {
                     num_tagged_fields += 1;
                 }
             }
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1294,7 +1294,7 @@ impl Encodable for TopicProduceResponse {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -1327,7 +1327,7 @@ impl Encodable for TopicProduceResponse {
         }
         if version >= 9 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

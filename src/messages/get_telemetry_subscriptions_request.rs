@@ -64,7 +64,7 @@ impl Encodable for GetTelemetrySubscriptionsRequest {
         }
         types::Uuid.encode(buf, &self.client_instance_id)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -79,7 +79,7 @@ impl Encodable for GetTelemetrySubscriptionsRequest {
         let mut total_size = 0;
         total_size += types::Uuid.compute_size(&self.client_instance_id)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

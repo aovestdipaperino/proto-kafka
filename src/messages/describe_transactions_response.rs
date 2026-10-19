@@ -79,7 +79,7 @@ impl Encodable for DescribeTransactionsResponse {
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -96,7 +96,7 @@ impl Encodable for DescribeTransactionsResponse {
         total_size += types::CompactArray(types::Struct { version })
             .compute_size(&self.transaction_states)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -212,7 +212,7 @@ impl Encodable for TopicData {
         types::CompactString.encode(buf, &self.topic)?;
         types::CompactArray(types::Int32).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -228,7 +228,7 @@ impl Encodable for TopicData {
         total_size += types::CompactString.compute_size(&self.topic)?;
         total_size += types::CompactArray(types::Int32).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -434,7 +434,7 @@ impl Encodable for TransactionState {
         types::Int16.encode(buf, &self.producer_epoch)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -456,7 +456,7 @@ impl Encodable for TransactionState {
         total_size += types::Int16.compute_size(&self.producer_epoch)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

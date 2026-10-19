@@ -109,7 +109,7 @@ impl Encodable for ListPartitionReassignmentsResponse {
         types::CompactString.encode(buf, &self.error_message)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -127,7 +127,7 @@ impl Encodable for ListPartitionReassignmentsResponse {
         total_size += types::CompactString.compute_size(&self.error_message)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -279,7 +279,7 @@ impl Encodable for OngoingPartitionReassignment {
         types::CompactArray(types::Int32).encode(buf, &self.adding_replicas)?;
         types::CompactArray(types::Int32).encode(buf, &self.removing_replicas)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -297,7 +297,7 @@ impl Encodable for OngoingPartitionReassignment {
         total_size += types::CompactArray(types::Int32).compute_size(&self.adding_replicas)?;
         total_size += types::CompactArray(types::Int32).compute_size(&self.removing_replicas)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -419,7 +419,7 @@ impl Encodable for OngoingTopicReassignment {
         types::CompactString.encode(buf, &self.name)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -436,7 +436,7 @@ impl Encodable for OngoingTopicReassignment {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

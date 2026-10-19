@@ -52,8 +52,16 @@ codec 4 with a garbage payload, "Failed to decompress record stream").
 
 | # | Area | Status |
 |---|---|---|
-| D1 | `UnsignedVarInt::decode` accepts a 5th byte with continuation, misframing the stream | open, fixed in Phase 2 |
-| D2 | Committed generated code in `src/` is stale: nullable fields defaulting to null still default to `Some("")` in 55 files | open, regenerate in Phase 2 |
+| D1 | `UnsignedVarInt::decode` accepts a 5th byte with continuation, misframing the stream | fixed in Phase 2 |
+| D2 | Generator rule from f0b0238 defaulted every nullable field to null; Java defaults to the type default (`""`, empty) unless `"default": "null"` | fixed in Phase 2 (generator rule reverted to Java's) |
+| D3 | `CompactString` decoders accept strings longer than 0x7fff; Java rejects them | fixed in Phase 2 |
+| D4 | `OptionStruct` treats only marker `1` as present; Java treats any non-negative marker as present | fixed in Phase 2 |
+| D5 | Arrays, bytes, strings and record headers pre-allocate by an attacker-controlled length (DoS); Java bounds arrays by remaining bytes | fixed in Phase 2 |
+
+`tests/golden_crate.rs` checks the crate's request/response/header decoders and encoders on
+every golden message vector: 11,560 checked, 0 known divergences
+(`verification/crate_known_divergences.txt` is empty). It also skips 200 vectors, listed
+under Coverage notes.
 
 ## Coverage notes
 
@@ -78,6 +86,17 @@ codec 4 with a garbage payload, "Failed to decompress record stream").
 - Tagged-field defaults are compared with `Value` equality, which compares float64 bitwise;
   Java's write rule compares a primitive `double` with `!=` (`FieldSpec.java:638-639`, so `-0.0 == 0.0` and `NaN != NaN`). Latent only:
   no 4.1.0 schema has a tagged float64 field (the two float64 fields are untagged).
+- Unstable API versions are not crate-checked. Kafka 4.1.0 marks the last version of
+  InitProducerIdRequest (v6), OffsetCommitRequest (v10), OffsetFetchRequest (v10),
+  StreamsGroupHeartbeatRequest (v0) and StreamsGroupDescribeRequest (v0) as
+  `"latestVersionUnstable": true`. The golden generator includes them
+  (`GoldenGen.java:63,73`, `highestSupportedVersion(true)`), but the crate's generator
+  drops them on purpose (`protocol_codegen/src/generate_messages/generate.rs:1403-1414`), so
+  API keys 88 and 89 have no `ApiKey` variant. `tests/golden_crate.rs` skips these 200
+  request/response vectors and counts them separately. This is by design, not a divergence:
+  generating them would raise `VERSIONS.max`, and blink advertises
+  `OffsetCommitRequest::VERSIONS.max` / `OffsetFetchRequest::VERSIONS.max` to clients.
+  The spec still covers them through `spec/tests` golden runs.
 - Tagged nullable struct fields are not supported (Java reads a varint presence marker); the
   schema-table emitter refuses them and none exist in 4.1.0.
 

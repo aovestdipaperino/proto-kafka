@@ -1,0 +1,3 @@
+# Golden vectors the crate is known to mishandle, one per line:
+#   <api_key> <kind> <version> <bytes-hex>  <D-id>  <one-line reason>
+# Every entry must have a D-id row in verification/DIVERGENCES.md and be fixed in a later phase.

@@ -97,7 +97,7 @@ impl Encodable for ListOffsetsPartition {
         types::Int64.encode(buf, &self.timestamp)?;
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -118,7 +118,7 @@ impl Encodable for ListOffsetsPartition {
         total_size += types::Int64.compute_size(&self.timestamp)?;
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -290,7 +290,7 @@ impl Encodable for ListOffsetsRequest {
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -326,7 +326,7 @@ impl Encodable for ListOffsetsRequest {
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -472,7 +472,7 @@ impl Encodable for ListOffsetsTopic {
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,
@@ -499,7 +499,7 @@ impl Encodable for ListOffsetsTopic {
         }
         if version >= 6 {
             let num_tagged_fields = self.unknown_tagged_fields.len();
-            if num_tagged_fields > std::u32::MAX as usize {
+            if num_tagged_fields > u32::MAX as usize {
                 return Err(ProtoError::FieldTooLarge {
                     field: "tagged fields count",
                     size: num_tagged_fields,

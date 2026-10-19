@@ -64,7 +64,7 @@ impl Encodable for InitializeShareGroupStateResponse {
         }
         types::CompactArray(types::Struct { version }).encode(buf, &self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -79,7 +79,7 @@ impl Encodable for InitializeShareGroupStateResponse {
         let mut total_size = 0;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.results)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -192,7 +192,7 @@ impl Encodable for InitializeStateResult {
         types::Uuid.encode(buf, &self.topic_id)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -209,7 +209,7 @@ impl Encodable for InitializeStateResult {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -340,7 +340,7 @@ impl Encodable for PartitionResult {
         types::Int16.encode(buf, &self.error_code)?;
         types::CompactString.encode(buf, &self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -357,7 +357,7 @@ impl Encodable for PartitionResult {
         total_size += types::Int16.compute_size(&self.error_code)?;
         total_size += types::CompactString.compute_size(&self.error_message)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

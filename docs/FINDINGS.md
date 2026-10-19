@@ -32,21 +32,53 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
   Java, `(b & 0x7F) << 28` on `u32` in Rust).
 - Status: **verified by reading source**. `UnsignedVarLong` and the signed variants have
   not been checked yet.
+- **Fixed (Phase 2, Task 3).**
 
-### D2. Committed generated code is stale relative to the generator (crate bug)
+### D2. Generator default rule diverged from Java (crate bug)
 
-- Commit `f0b0238` changed the generator so nullable fields default to null instead of
-  `Some("")`. It fixed a librdkafka wire incompatibility in CreateTopics. Only
-  `create_topics_*` was regenerated.
-- Running `cargo run -p protocol_codegen` at that commit changes **55 files under `src/`**
-  (+133/−191). Example: `request_header.rs` has the committed `Default`
-  `client_id: Some(Default::default())`, where the generator now produces `None`.
-- Every other message with a nullable field whose default is null still ships the old
-  default. Encoding a default-constructed message writes `""` where Java writes null (−1),
-  which is the same class of bug f0b0238 fixed for CreateTopics.
-- Status: **verified by running the codegen** (Phase 1, Task 4). Not fixed in Phase 1,
-  which must not change proto-kafka behaviour. Regenerating `src/` belongs in Phase 2, and
-  the Phase 4 encode harnesses would flag it.
+- Java's `FieldSpec.fieldDefault` gives `""` (string), empty (bytes/array), etc. for a
+  nullable field **without** an explicit `"default"`. The default is null only for
+  `"default": "null"`.
+- Commit `f0b0238` made the generator default every nullable field without an explicit
+  default to null (`PreparedDefault::Null`), calling this a "Kafka convention". That
+  diverges from Java. Golden evidence: Java's default `RequestHeader` v1 encodes
+  `client_id` as `00 00` (empty string); the generated code after f0b0238 encodes `ff ff`.
+- The earlier Phase 1 note that called the committed `src/` files "stale" had it backwards:
+  the committed files (except CreateTopics, hand-edited in f0b0238) matched Java; the
+  generator rule was wrong.
+- **Fixed (Phase 2, Task 1):** rule reverted, `src/` regenerated, `tests/golden_defaults.rs`
+  pins header defaults to Java's.
+- Consequence: `CreatableTopicResult::default()` now has `error_message: Some("")` and
+  `configs: Some(empty)`, like Java. Code that needs null on the wire (e.g. blink's
+  `src/kafka/admin.rs` CreateTopics responses, librdkafka compatibility) must set
+  `.with_error_message(None)` explicitly, as Java's broker does.
+
+### D3. Compact strings longer than 0x7fff were accepted (crate bug)
+- Crate `CompactString` decoders read any compact length; Java's generated readers throw
+  "string field X had invalid length" above 0x7fff (`MessageDataGenerator.java:632`). **Fixed (Phase 2, Task 4).**
+
+### D4. Nullable struct marker misread (crate bug)
+- Crate `OptionStruct` decoded `Some` only for marker `1`; Java reads the struct for any
+  non-negative marker (`readByte() < 0` is null, `MessageDataGenerator.java:549`). A marker
+  of `0` made the crate return `None` and misparse the struct's bytes as the next field.
+  **Fixed (Phase 2, Task 4).**
+
+### D5. Hostile lengths caused unbounded pre-allocation (crate bug, DoS)
+- `Array`/`CompactArray` called `Vec::with_capacity(n)` with an attacker-controlled `n`
+  (up to ~2^32) before reading; `String`/`Bytes` `Vec` decoders allocated `vec![0; n]`
+  before checking the buffer; record header decoding called `IndexMap::with_capacity` on the
+  declared count. A single request could make the broker abort on allocation failure. Java
+  guards arrays with `length > remaining` (`MessageDataGenerator.java:656`). **Fixed (Phase 2, Task 4):**
+  arrays are bounded by remaining bytes, as Java does; byte and string reads check the buffer
+  before copying; header capacity is capped at the remaining bytes.
+
+### Other varint decoders (Phase 5 scope)
+
+- `src/records/raw.rs:70-82` (`decode_varint`, protobuf-style u64): rejects a 10th-byte
+  continuation (returns `None` once `shift >= 70`). It does not reject 10th-byte bits beyond
+  bit 63 (silently dropped), so there is no `VarintOverflow` equivalent. The encoder at
+  `raw.rs:92-95` is not a decoder. No other hand-rolled varint decoders exist outside
+  `types.rs`, `primitives.rs` and `src/messages`.
 
 ## Java decode behaviour (ground truth for the reference spec)
 
@@ -255,3 +287,115 @@ Final status: `golden_headers`, `golden_messages` (including
   Central, so the golden generator can be a Maven project.
 - Not installed: Kani, Lean/elan, Charon, Aeneas.
 - `docs/superpowers/` is gitignored in proto-kafka, so specs and plans stay local.
+- Correction: the earlier claim that main did not compile on Rust 1.88 was wrong. It came
+  from Homebrew rustc 1.99 shadowing rustup's 1.88. `std::u32::MAX` is only an error on
+  newer compilers; the generator now emits `u32::MAX` for forward compatibility.
+
+## Phase 2 proofs (Kani 0.68.0)
+
+Run: `RUSTC_WRAPPER= cargo kani --tests -p proto-kafka --no-default-features --features client,broker`.
+Environment: CBMC 6.11.0; the global `RUSTC_WRAPPER=kache` breaks kani-compiler, so it is cleared per command (global config untouched). All 17 harnesses verified, no counterexamples, no crate-vs-spec divergences.
+
+| harness | result | time | covers |
+|---|---|---|---|
+| uvarint_decode_conforms | SUCCESSFUL | 3.9s | complete: all inputs up to 6 bytes (decoder reads at most 5) |
+| uvarlong_decode_conforms | SUCCESSFUL | 8.0s | complete: all inputs up to 11 bytes (reads at most 10) |
+| varint_signed_decode_conforms | SUCCESSFUL | 4.5s | complete: up to 6 bytes |
+| varlong_signed_decode_conforms | SUCCESSFUL | 9.0s | complete: up to 11 bytes |
+| uvarint_encode_conforms | SUCCESSFUL | 2.1s | complete: every u32, plus size and roundtrip |
+| uvarlong_encode_conforms | SUCCESSFUL | 3.3s | complete: every u64, plus size and roundtrip |
+| varint_signed_encode_conforms | SUCCESSFUL | 0.9s | complete: every i32 |
+| varlong_signed_encode_conforms | SUCCESSFUL | 1.5s | complete: every i64 |
+| int16_length_conforms | SUCCESSFUL | 0.5s | complete: every i16, nullable and not |
+| int32_length_conforms | SUCCESSFUL | 0.5s | complete: every i32, nullable and not |
+| compact_length_conforms | SUCCESSFUL | 5.5s | complete: every u32, nullable and not |
+| unsigned_varint_wrapper_decode | SUCCESSFUL | 8.1s | complete: up to 6 bytes |
+| unsigned_varlong_wrapper_decode | SUCCESSFUL | 14.0s | complete: up to 11 bytes |
+| unsigned_varint_wrapper_encode | SUCCESSFUL | 1.2s | complete: every u32 |
+| unsigned_varlong_wrapper_encode | SUCCESSFUL | 1.4s | complete: every u64 |
+| varint_wrapper_decode | SUCCESSFUL | 9.2s | complete: up to 6 bytes |
+| varlong_wrapper_decode | SUCCESSFUL | 15.5s | complete: up to 11 bytes |
+| framing::compact_bytes_encode | SUCCESSFUL | 8.4s | bounded: null and every byte string of up to 3 bytes |
+| framing::string_encode_ascii_len{0,1,2,3} | SUCCESSFUL | 8.4s / 15.6s / 15.3s / 16.8s | bounded: every ASCII string of exactly 0..=3 bytes (union: up to 3 bytes) |
+| framing::{string_nullable, string, compact_string_nullable, bytes_nullable, compact_bytes_nullable, array_int32_nullable, compact_array_int32_nullable}_decode | BLOCKED (not registered) | timeout (1300s in the first run; 240s per re-run) | intended: all inputs up to 6/6/6/7/6/12/10 bytes; see "Task 6 blocker" below |
+| unsafe_sites::strbytes_from_utf8_is_exactly_utf8_len{0,1,2,3,4} | SUCCESSFUL | 0.5s / 12.9s / 14.5s / 15.6s / 15.2s | bounded: every input of exactly 0..=4 bytes (union: up to 4 bytes, covering every 1-4 byte UTF-8 sequence) |
+| unsafe_sites::bytesmut_advance_mut_keeps_written_bytes_p{0,2}_k{0,1,2,3} | SUCCESSFUL | 0.8-0.9s each | bounded: 0 or 2 symbolic prefix bytes, 0..=3 symbolic bytes written through `chunk_mut` + `advance_mut` |
+
+Task 6 (framing and `unsafe` sites). Same command and environment. 18 Task 6 harnesses verified, 7 decode harnesses blocked, no counterexamples, no crate-vs-spec divergences found. Task 5's 17 harnesses re-verified unchanged.
+
+Bounds were split per concrete length (`_lenN`, `_pP_kK`) instead of the brief's `len: usize = kani::any(); &buf[..len]`. A symbolic slice length makes CBMC model `memcpy`/UTF-8 validation over symbolic-size arrays, so `strbytes_from_utf8_is_exactly_utf8` and `string_encode_ascii` timed out or ran out of memory. Split per length, each one finishes in under 20s. The union of the split harnesses covers the same input set as the original bound.
+
+**`StrBytes` constructor audit.** The tuple field of `StrBytes` is private to `protocol::str_bytes`, and the only `Self(..)` sites are `new` (empty `Bytes`), `from_static_str` (from `&'static str`), `from_string` (from `String`) and `from_utf8` (validates with `std::str::from_utf8`). `From<&'static str>`, `From<String>` and `TryFrom<Bytes>` delegate to these. The derived `Default` (empty `Bytes`) and `Clone` (copy of a valid value) also preserve validity. No serde or other impls construct one, and `GroupId`/`TopicName`/`TransactionalId` wrap an existing `StrBytes`. Only `from_utf8` takes unchecked bytes, and the `strbytes_*` harnesses prove it accepts exactly valid UTF-8 and `as_str` returns the same bytes. The `from_utf8_unchecked` in `as_str` is sound.
+
+**`SegmentedBuf::advance_mut`.** The forwarded `BytesMut` contract is model-checked (`bytesmut_*`). The `SegmentedBuf` wrapper is argued by hand, because Kani cannot handle it. `chunk_mut` calls `current_inline()`, which makes the last segment `Inline`, and returns that segment's spare capacity. Nothing can change the segment list between `chunk_mut` and the caller's `advance_mut` (both take `&mut self`, and the caller only writes into the returned slice). So `advance_mut`'s own `current_inline()` finds the same `Inline` segment and forwards `cnt`, then adds `cnt` to `total_len`. If a caller breaks the contract and calls `advance_mut(cnt > 0)` without `chunk_mut`, it gets either that same segment or a fresh empty `BytesMut`. `BytesMut::advance_mut` panics when `cnt` exceeds spare capacity (bytes 1.12, `panic_advance`), so the result is a panic, not UB. Why Kani cannot handle the wrapper: a `BytesMut` held inside the segment `Vec` has its pointer fields (including the int-tagged `data`) stored in heap memory, which CBMC models as bytes. Even the fully concrete `SegmentedBuf::new(); sb.chunk_mut()` (push + `reserve(8192)`) does not finish propositional reduction in 250s. Every variant tried also timed out: P = 0/2, K = 0/3, unwind 2/3/6, CaDiCaL, `--arrays-uf-always`, `mem::forget`, no read-back. The Z3 backend crashes CBMC (`map::at: key not found`). The same operations on a stack `BytesMut` take 0.8s. Before this work, both unsafe-site harnesses had been reported as FAILED. That was CBMC out-of-memory ("CBMC appears to have run out of memory"), not a failed check, made worse by four orphaned `cbmc` processes from a killed earlier run.
+
+**Task 6 blocker: decode harnesses vs `interp::decode`.** None of the seven decode harnesses terminates, and the input bound is not the cause: a fully concrete 3-byte input does not finish symbolic execution in 240s at unwind(10), and symbolic N = 3 at unwind(4) does not finish in 300s either. `interp::decode` builds and drops a recursive `Value` tree (`Array(Vec<Value>)`, `Struct(Box<StructValue>)`, `unknown_tags: Vec<(u32, Vec<u8>)>`) through heap memory: `read_struct`'s `vec![None; n]` slots, the zip `IntoIter`, and drops on `?` error paths. CBMC loses the enum discriminant through the heap and unrolls `drop_glue::<Value>` to the unwind depth at about 130-150 sites ("Not unwinding recursion drop_glue::<Value>"). The harness-side `mem::forget` of the spec result does not help, because the drops are inside the interpreter. The encode direction is unaffected (`compact_bytes_encode`, `string_encode_ascii_*` pass), because there the harness builds the `StructValue` concretely. The harnesses stay in `src/proofs/framing.rs` as unregistered functions marked BLOCKED. Possible ways to unblock, all outside Task 6 scope: (a) a Value-free spec entry point for one primitive/array field (for example a `pub` `read_prim`-style function over `wire::Reader`), against which the crate decoders can be checked while `interp::decode` keeps using it; (b) Kani stubbing (`-Z stubbing`) of the interpreter's struct plumbing; (c) exhaustive bounded unit tests (crate vs `interp::decode` on every input up to 3 bytes, plus structured length-prefix enumeration) in place of Kani.
+
+## Phase 2 results
+
+### Crate divergences D1-D5
+
+| # | Status | Fixed in |
+|---|---|---|
+| D1 | **fixed**: unsigned/signed varints and varlongs longer than their type are rejected (`ProtoError::VarintTooLong`), as Java does; extra high bits in the final byte are rejected too (`VarintOverflow`, spec S5) | Task 3 (`10f4c97`) |
+| D2 | **fixed**: the generator follows Java's nullable defaults again; `src/` regenerated; `tests/golden_defaults.rs` pins the header defaults | Task 1 (`bd85a66`) |
+| D3 | **fixed**: compact strings longer than 0x7fff are rejected (`StringTooLong`) | Task 4 (`142bf7c`) |
+| D4 | **fixed**: any non-negative nullable-struct marker means present | Task 4 (`142bf7c`) |
+| D5 | **fixed**: array lengths are bounded by the bytes remaining (Java's rule); byte/string reads check the buffer before allocating | Task 4 (`142bf7c`) |
+
+### Golden conformance of the crate (`tests/golden_crate.rs`)
+
+The crate's `RequestKind`/`ResponseKind`/`RequestHeader`/`ResponseHeader` decoders and
+encoders, checked on all 11,760 golden message vectors:
+
+- **checked 11,560, skipped (known divergences) 0, skipped (unstable, not generated) 200.**
+  No failures. Every vector Java wrote (`default`, `random`) decodes, consumes every byte and
+  re-encodes byte for byte. The crate rejects every mutation Java rejects. On every mutation
+  Java accepts, the crate either consumes exactly Java's byte count or rejects it, and in the
+  rejection cases the spec's strict mode also rejects with `Strict(_)`.
+- No new D-ids. `verification/crate_known_divergences.txt` is empty.
+- The first run had 61 failures, all with the same cause. They were in the unstable last
+  versions of Kafka 4.1.0's `"latestVersionUnstable": true` schemas: InitProducerId v6 (14),
+  OffsetCommit v10 (7), OffsetFetch v10 (7), StreamsGroupHeartbeat v0 (16, requests and
+  responses) and StreamsGroupDescribe v0 (17). The crate generator drops these versions on
+  purpose (`protocol_codegen/src/generate_messages/generate.rs:1403-1414`,
+  `valid_versions.without_last()`; with no stable version left, API keys 88 and 89 are not
+  generated at all). The golden generator includes them (`GoldenGen.java:63,73`,
+  `highestSupportedVersion(true)`). Decision: skip them in the test and count them, rather
+  than generate them. Generating them would raise `VERSIONS.max` for OffsetCommit and
+  OffsetFetch, which blink advertises to clients (`blink/src/kafka/metadata.rs:148-149`),
+  while a real 4.1.0 broker only advertises these versions with
+  `unstable.api.versions.enable`. The skip list is `UNSTABLE_NOT_GENERATED` in the test. It
+  covers all 200 vectors at those versions, including Java-rejected mutations, which the
+  crate would also have rejected.
+
+### Kani harnesses
+
+- Task 5: 17/17 SUCCESSFUL, complete proofs (no bound beyond the decoders' own maximum read
+  length; see the table in "Phase 2 proofs" above). These cover the primitives (varint,
+  varlong, zigzag, i16/i32/compact lengths) and the `types.rs` varint wrappers. Each takes
+  0.5-15.5s.
+- Task 6: 18 harnesses SUCCESSFUL: `unsafe_sites` (5 `StrBytes::from_utf8` lengths and 8
+  `BytesMut::advance_mut` contract cases) plus 5 framing encode harnesses. Bounds: up to
+  3-4 bytes, 0.5-16.8s each. `SegmentedBuf::advance_mut` is argued by hand (above).
+- Task 6.5 (`bfdbb11`): to get past the Task 6 decode blocker, the spec gained a Value-free
+  field decoder, `interp::decode_field`, which `interp::decode` reuses. The seven framing
+  decode harnesses were split by length-prefix class into concrete-prefix harnesses
+  (`src/proofs/framing.rs`, `decode_harnesses!`). Their Kani results are not recorded here:
+  the full `cargo kani` run was not part of Task 7. `src/proofs/framing.rs` still contains a
+  `// TEMP-EXPERIMENTS` block (`zz_orig_*`, the original symbolic-length harnesses that do
+  not terminate). It must be removed or filtered out before running the documented
+  `cargo kani --tests` command.
+
+### Downstream: blink
+
+blink pins `proto-kafka 0.19.3` from crates.io. It gets none of these fixes until it upgrades
+to 0.20.0, and that upgrade brings the behaviour changes listed in `CHANGELOG.md` under
+0.20.0:
+- D2 (breaking): `CreatableTopicResult::default()` now has `error_message: Some("")`.
+  blink's CreateTopics responses (`src/kafka/admin.rs`) must set `.with_error_message(None)`
+  explicitly, as Java's broker does.
+- D1/D3/D5: inputs that used to be accepted, or that crashed the process by aborting an
+  allocation, now fail with `ProtoError::{VarintTooLong, VarintOverflow, StringTooLong,
+  ArrayTooLong}`.
+- D4: a nullable-struct marker of `0` now decodes as present.

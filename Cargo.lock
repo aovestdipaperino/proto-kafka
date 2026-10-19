@@ -1572,7 +1572,7 @@ dependencies = [
 
 [[package]]
 name = "proto-kafka"
-version = "0.19.4"
+version = "0.20.0"
 dependencies = [
  "bytes",
  "crc",
@@ -1581,6 +1581,8 @@ dependencies = [
  "indexmap 2.14.0",
  "lz4",
  "paste",
+ "proto-kafka-spec",
+ "serde_json",
  "snap",
  "testcontainers",
  "thiserror",

@@ -124,7 +124,7 @@ impl Encodable for ControllerRegistrationRequest {
         types::CompactArray(types::Struct { version }).encode(buf, &self.listeners)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.features)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -145,7 +145,7 @@ impl Encodable for ControllerRegistrationRequest {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.features)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -285,7 +285,7 @@ impl Encodable for Feature {
         types::Int16.encode(buf, &self.min_supported_version)?;
         types::Int16.encode(buf, &self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -302,7 +302,7 @@ impl Encodable for Feature {
         total_size += types::Int16.compute_size(&self.min_supported_version)?;
         total_size += types::Int16.compute_size(&self.max_supported_version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -451,7 +451,7 @@ impl Encodable for Listener {
         types::UInt16.encode(buf, &self.port)?;
         types::Int16.encode(buf, &self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -469,7 +469,7 @@ impl Encodable for Listener {
         total_size += types::UInt16.compute_size(&self.port)?;
         total_size += types::Int16.compute_size(&self.security_protocol)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

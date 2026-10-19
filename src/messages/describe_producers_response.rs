@@ -79,7 +79,7 @@ impl Encodable for DescribeProducersResponse {
         types::Int32.encode(buf, &self.throttle_time_ms)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -95,7 +95,7 @@ impl Encodable for DescribeProducersResponse {
         total_size += types::Int32.compute_size(&self.throttle_time_ms)?;
         total_size += types::CompactArray(types::Struct { version }).compute_size(&self.topics)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -241,7 +241,7 @@ impl Encodable for PartitionResponse {
         types::CompactString.encode(buf, &self.error_message)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.active_producers)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -260,7 +260,7 @@ impl Encodable for PartitionResponse {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.active_producers)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -442,7 +442,7 @@ impl Encodable for ProducerState {
         types::Int32.encode(buf, &self.coordinator_epoch)?;
         types::Int64.encode(buf, &self.current_txn_start_offset)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -462,7 +462,7 @@ impl Encodable for ProducerState {
         total_size += types::Int32.compute_size(&self.coordinator_epoch)?;
         total_size += types::Int64.compute_size(&self.current_txn_start_offset)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -590,7 +590,7 @@ impl Encodable for TopicResponse {
         types::CompactString.encode(buf, &self.name)?;
         types::CompactArray(types::Struct { version }).encode(buf, &self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -607,7 +607,7 @@ impl Encodable for TopicResponse {
         total_size +=
             types::CompactArray(types::Struct { version }).compute_size(&self.partitions)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

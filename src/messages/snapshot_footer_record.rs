@@ -63,7 +63,7 @@ impl Encodable for SnapshotFooterRecord {
         }
         types::Int16.encode(buf, &self.version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,
@@ -78,7 +78,7 @@ impl Encodable for SnapshotFooterRecord {
         let mut total_size = 0;
         total_size += types::Int16.compute_size(&self.version)?;
         let num_tagged_fields = self.unknown_tagged_fields.len();
-        if num_tagged_fields > std::u32::MAX as usize {
+        if num_tagged_fields > u32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
                 field: "tagged fields count",
                 size: num_tagged_fields,

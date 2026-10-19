@@ -116,6 +116,8 @@ pub mod error;
 pub mod header_io;
 #[allow(clippy::all, clippy::pedantic, redundant_imports)]
 pub mod messages;
+#[cfg(all(kani, test))]
+mod proofs;
 pub mod protocol;
 pub mod records;
 
