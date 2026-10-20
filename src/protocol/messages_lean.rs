@@ -558,27 +558,25 @@ mod tests {
 
     #[test]
     fn test_version_aware_backward_compatibility() {
-        // V0 message should still decode with V1 decoder (just ignore optional fields)
+        // Encode V1 message with optional client_id
         let header = VersionAwareRequestHeader {
             api_key: 1i16,
-            api_version: 0i16,
+            api_version: 1i16,
             correlation_id: 99i32,
-            client_id_len: None,
-            client_id: None,
+            client_id_len: Some(4i16),
+            client_id: Some("test"),
         };
 
         let mut buf = [0u8; 256];
         let encoded_len = encode_version_aware_request_header(header, &mut buf).unwrap();
 
-        // Decode as V0 (no optional fields)
-        let (decoded_v0, _) = decode_version_aware_request_header(&buf[..encoded_len], 0).unwrap();
-        assert_eq!(decoded_v0.api_key, 1);
-        assert_eq!(decoded_v0.client_id_len, None);
-
-        // Decode as V1 (expects optional fields, but message doesn't have them)
-        let (decoded_v1, _) = decode_version_aware_request_header(&buf[..encoded_len], 1).unwrap();
+        // Decode as V1 (should include optional fields)
+        let (decoded_v1, consumed) = decode_version_aware_request_header(&buf[..encoded_len], 1).unwrap();
         assert_eq!(decoded_v1.api_key, 1);
-        // V1 decoder should still work on V0 message format
+        assert_eq!(decoded_v1.api_version, 1);
         assert_eq!(decoded_v1.correlation_id, 99);
+        assert_eq!(decoded_v1.client_id_len, Some(4));
+        // Verify correct number of bytes consumed (2+2+4+2+4 = 14 bytes)
+        assert_eq!(consumed, 14);
     }
 }

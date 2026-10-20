@@ -36,6 +36,7 @@ pub mod request_header_vectors {
         description: "Simple RequestHeader v0 without optional fields",
     };
 
+    /// RequestHeader v1 with optional client_id field
     pub const V1_WITH_CLIENT_ID: GoldenVector = GoldenVector {
         name: "RequestHeader v1 with client_id",
         api_version: 1,
@@ -49,6 +50,7 @@ pub mod request_header_vectors {
         description: "RequestHeader v1 with optional client_id field",
     };
 
+    /// RequestHeader v2 with maximum correlation_id
     pub const V2_LARGE_CORRELATION: GoldenVector = GoldenVector {
         name: "RequestHeader v2 large correlation_id",
         api_version: 2,
@@ -62,6 +64,7 @@ pub mod request_header_vectors {
         description: "RequestHeader v2 with maximum correlation_id",
     };
 
+    /// Collect all RequestHeader golden vectors
     pub fn all_vectors() -> &'static [GoldenVector] {
         &[
             V0_SIMPLE,
@@ -75,6 +78,7 @@ pub mod request_header_vectors {
 pub mod request_body_vectors {
     use super::*;
 
+    /// Simple RequestBody with no errors
     pub const SIMPLE: GoldenVector = GoldenVector {
         name: "RequestBody simple",
         api_version: 0,
@@ -86,6 +90,7 @@ pub mod request_body_vectors {
         description: "Simple RequestBody with no errors",
     };
 
+    /// RequestBody with error_code set
     pub const WITH_ERROR: GoldenVector = GoldenVector {
         name: "RequestBody with error",
         api_version: 0,
@@ -97,6 +102,7 @@ pub mod request_body_vectors {
         description: "RequestBody with error_code set",
     };
 
+    /// Collect all RequestBody golden vectors
     pub fn all_vectors() -> &'static [GoldenVector] {
         &[
             SIMPLE,
@@ -109,6 +115,7 @@ pub mod request_body_vectors {
 pub mod response_body_vectors {
     use super::*;
 
+    /// ResponseBody with no throttling
     pub const ZERO_THROTTLE: GoldenVector = GoldenVector {
         name: "ResponseBody no throttle",
         api_version: 0,
@@ -119,6 +126,7 @@ pub mod response_body_vectors {
         description: "ResponseBody with no throttling",
     };
 
+    /// ResponseBody with 1 second throttle
     pub const WITH_THROTTLE: GoldenVector = GoldenVector {
         name: "ResponseBody with throttle",
         api_version: 0,
@@ -129,6 +137,7 @@ pub mod response_body_vectors {
         description: "ResponseBody with 1 second throttle",
     };
 
+    /// Collect all ResponseBody golden vectors
     pub fn all_vectors() -> &'static [GoldenVector] {
         &[
             ZERO_THROTTLE,
@@ -141,6 +150,7 @@ pub mod response_body_vectors {
 pub mod version_aware_vectors {
     use super::*;
 
+    /// Version-aware RequestHeader v0 without client_id (8 bytes)
     pub const V0_NO_CLIENT_ID: GoldenVector = GoldenVector {
         name: "VersionAware v0 (no client_id)",
         api_version: 0,
@@ -152,6 +162,7 @@ pub mod version_aware_vectors {
         description: "Version-aware RequestHeader v0 without client_id (8 bytes)",
     };
 
+    /// Version-aware RequestHeader v1 with empty client_id (10 bytes)
     pub const V1_WITH_EMPTY_CLIENT_ID: GoldenVector = GoldenVector {
         name: "VersionAware v1 (empty client_id)",
         api_version: 1,
@@ -164,6 +175,7 @@ pub mod version_aware_vectors {
         description: "Version-aware RequestHeader v1 with empty client_id (10 bytes)",
     };
 
+    /// Collect all version-aware golden vectors
     pub fn all_vectors() -> &'static [GoldenVector] {
         &[
             V0_NO_CLIENT_ID,
