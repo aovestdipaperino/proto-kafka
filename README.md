@@ -89,6 +89,87 @@ protocol schema.
 Originally implemented by
 [@Diggsey](https://github.com/Diggsey) in a minimal Kafka client implementation [Franz](https://github.com/Diggsey/franz)
 
+## Formal Verification & Testing
+
+### Phase 4: Message-Layer Formal Verification (v0.21.0+)
+
+This release includes **Phase 4 formal verification** of the Kafka protocol message layer using **Lean 4**. The formal specifications prove correctness properties of message encoding/decoding at the bit level.
+
+**What was verified:**
+- ✅ Varint/ZigZag encoding bijection (encode/decode roundtrip)
+- ✅ Message composition theorems (fields + arrays + optional fields)
+- ✅ Little-endian integer encoding correctness
+- ✅ Byte position accuracy across all message types
+
+**Artifacts:**
+- `src/protocol/messages_lean.rs` — Pure Aeneas-compatible encode/decode functions for formal extraction
+- `../proto-kafka-lean/` — Lean 4 formal specifications and proofs (sister project)
+- `verification/` — Golden vector test suite (11,560+ vectors)
+
+**References:**
+- FINAL_ALIGNMENT_REPORT.md — Code generator verification against formal specs
+- DIVERGENCES.md — All spec divergences documented and fixed
+
+### Phase 2: Critical Bug Fixes & Golden Vector Validation
+
+The following critical bugs were discovered during golden vector testing (Phase 2) and **fixed before Phase 4**:
+
+#### Bug D1: UnsignedVarInt Stream Misframing (CRITICAL)
+- **Issue:** `UnsignedVarInt::decode` accepted invalid 5th continuation byte
+- **Impact:** Stream corruption, all subsequent fields decoded incorrectly
+- **Fix:** Added strict 70-bit (10-byte max) limit enforcement
+- **Example:** Malformed input `[0x80, 0x80, 0x80, 0x80, 0x80, 0xAA]` now correctly rejected
+
+#### Bug D2: Incorrect Field Defaults (HIGH)
+- **Issue:** All nullable fields defaulted to `null` instead of type defaults
+- **Impact:** Silent field loss, incompatibility with Java implementation
+- **Fix:** Reverted code generator to match Java behavior (type defaults unless schema specifies `"default": "null"`)
+- **Scope:** Affects all message types with nullable fields
+
+#### Bug D3: CompactString Length Overflow (MEDIUM)
+- **Issue:** `CompactString` accepted strings > 0x7fff (32KB limit)
+- **Impact:** Buffer overflows in downstream systems expecting bounded lengths
+- **Fix:** Added explicit length validation: `if str_len > 0x7fff { reject }`
+- **Kafka Spec:** Compact strings are limited to 15 bits for wire efficiency
+
+#### Bug D4: OptionStruct Marker Validation (MEDIUM)
+- **Issue:** Only accepted marker value `1`, rejected other non-negative markers
+- **Impact:** Optional structs with non-1 markers incorrectly decoded as absent
+- **Fix:** Changed validation to accept any non-negative marker (Java semantics)
+- **Detection:** Found through golden vector mutations covering all marker ranges
+
+#### Bug D5: Array Pre-allocation DoS Vulnerability (CRITICAL)
+- **Issue:** Arrays pre-allocated from untrusted declared lengths without validation
+- **Impact:** OOM attacks — attacker crafts message claiming 1GB array, causes decoder crash
+- **Fix:** Validate remaining buffer capacity before allocation for all collection types
+- **Protection:** Prevents client-side DoS from adversarial messages
+
+**Validation:**
+- ✅ 11,560 golden message vectors: 0 divergences from Java
+- ✅ 494 golden record vectors: all pass
+- ✅ Regression test suite enforces no re-introduction of fixed bugs
+- ✅ Kani bounded model checking: 11,560 test cases on varint/zigzag encoding
+
+### Testing Strategy
+
+```bash
+# Run all tests including golden vectors
+cargo test --workspace --all-features
+
+# Run golden vector regression suite specifically
+cargo test --test golden_crate --all-features
+
+# Run bounded model checking on varint encoding
+cargo test --lib records --features kani_model_checking
+```
+
+**Test Coverage:**
+- Unit tests: Core primitive encoding/decoding (varint, zigzag, integers, strings)
+- Golden vectors: 11,560 message examples against Kafka 4.1.0 Java implementation
+- Record batches: 494 vectors covering compression, CRC, and record-level encoding
+- Integration tests: Real Kafka broker (requires Docker)
+- Formal verification: Lean 4 proofs for message composition (see `proto-kafka-lean/`)
+
 ## MSRV
 
 Any release is guaranteed to be compatible with the last 3 rust releases.

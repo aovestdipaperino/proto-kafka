@@ -22,6 +22,7 @@ use bytes::Bytes;
 pub mod buf;
 pub mod primitives;
 pub mod types;
+pub mod messages_lean; // Phase 4: Aeneas-compatible message codecs
 
 pub use buf::SegmentedBuf;
 
