@@ -23,6 +23,7 @@ pub mod buf;
 pub mod primitives;
 pub mod types;
 pub mod messages_lean; // Phase 4: Aeneas-compatible message codecs
+pub mod golden_vectors; // Phase 4d: Golden vector test suite
 
 pub use buf::SegmentedBuf;
 
