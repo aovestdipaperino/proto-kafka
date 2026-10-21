@@ -795,7 +795,8 @@ impl RecordBatchDecoder {
         version: i8,
         records: &mut Vec<Record>,
     ) -> Result<()> {
-        records.reserve(batch_decode_info.record_count);
+        // record_count comes from the wire; every record takes at least one byte.
+        records.reserve(batch_decode_info.record_count.min(buf.remaining()));
         for _ in 0..batch_decode_info.record_count {
             records.push(Record::decode_new(buf, batch_decode_info, version)?);
         }
@@ -1052,14 +1053,14 @@ impl Record {
         types::Int8.encode(buf, 0)?;
 
         // Timestamp delta
-        let timestamp_delta = self.timestamp - min_timestamp;
-        if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            return Err(ProtoError::TimestampDeltaOverflow {
+        // Kafka encodes timestampDelta as a varlong, so only i64 overflow is an error.
+        let timestamp_delta = self.timestamp.checked_sub(min_timestamp).ok_or(
+            ProtoError::TimestampDeltaOverflow {
                 min: min_timestamp,
                 max: self.timestamp,
-            });
-        }
-        types::VarInt.encode(buf, timestamp_delta as i32)?;
+            },
+        )?;
+        types::VarLong.encode(buf, timestamp_delta)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
@@ -1089,14 +1090,13 @@ impl Record {
         total_size += types::Int8.compute_size(0)?;
 
         // Timestamp delta
-        let timestamp_delta = self.timestamp - min_timestamp;
-        if timestamp_delta > i32::MAX as i64 || timestamp_delta < i32::MIN as i64 {
-            return Err(ProtoError::TimestampDeltaOverflow {
+        let timestamp_delta = self.timestamp.checked_sub(min_timestamp).ok_or(
+            ProtoError::TimestampDeltaOverflow {
                 min: min_timestamp,
                 max: self.timestamp,
-            });
-        }
-        total_size += types::VarInt.compute_size(timestamp_delta as i32)?;
+            },
+        )?;
+        total_size += types::VarLong.compute_size(timestamp_delta)?;
 
         // Offset delta
         let offset_delta = self.offset - min_offset;
@@ -1131,8 +1131,11 @@ impl Record {
 
         let _attributes: i8 = types::Int8.decode(buf)?;
 
-        let timestamp_delta: i32 = types::VarInt.decode(buf)?;
-        let timestamp = batch_decode_info.min_timestamp + timestamp_delta as i64;
+        // varlong, as in Java's DefaultRecord; the sum wraps like Java's `long` addition.
+        let timestamp_delta: i64 = types::VarLong.decode(buf)?;
+        let timestamp = batch_decode_info
+            .min_timestamp
+            .wrapping_add(timestamp_delta);
 
         let offset_delta: i32 = types::VarInt.decode(buf)?;
         let offset = batch_decode_info.min_offset + offset_delta as i64;
@@ -1242,6 +1245,72 @@ mod tests {
             2,
         )
         .expect("decode works");
+    }
+
+    fn batch_info(record_count: usize, min_timestamp: i64) -> BatchDecodeInfo {
+        BatchDecodeInfo {
+            record_count,
+            timestamp_type: TimestampType::Creation,
+            min_offset: 0,
+            min_timestamp,
+            base_sequence: 0,
+            transactional: false,
+            control: false,
+            partition_leader_epoch: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            compression: Compression::None,
+        }
+    }
+
+    /// Kafka encodes timestampDelta as a varlong, so deltas outside i32 must round-trip.
+    #[test]
+    fn timestamp_delta_beyond_i32_round_trips() {
+        let min_timestamp = 1_000;
+        let timestamp = min_timestamp + i64::from(i32::MAX) + 1_000;
+        let record = Record {
+            transactional: false,
+            control: false,
+            partition_leader_epoch: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            sequence: 0,
+            timestamp_type: TimestampType::Creation,
+            offset: 0,
+            timestamp,
+            key: None,
+            value: None,
+            headers: Default::default(),
+        };
+        let options = RecordEncodeOptions {
+            version: 2,
+            compression: Compression::None,
+        };
+        let mut buf = bytes::BytesMut::new();
+        record
+            .encode_new(&mut buf, 0, min_timestamp, &options)
+            .expect("encode works");
+
+        let mut bytes = buf.freeze();
+        let decoded =
+            Record::decode_new(&mut bytes, &batch_info(1, min_timestamp), 2).expect("decode works");
+        assert_eq!(decoded.timestamp, timestamp);
+        assert!(bytes.is_empty());
+    }
+
+    /// An untrusted record_count must not drive the allocation size.
+    #[test]
+    fn huge_record_count_does_not_preallocate() {
+        let mut records = Vec::new();
+        let mut buf = Bytes::new();
+        let result = RecordBatchDecoder::decode_new_records(
+            &mut buf,
+            &batch_info(1 << 40, 0),
+            2,
+            &mut records,
+        );
+        assert!(result.is_err());
+        assert_eq!(records.capacity(), 0);
     }
 
     #[test]

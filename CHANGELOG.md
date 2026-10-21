@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Imported from upstream kafka-protocol-rs.
+
+### Bug fixes
+
+- **Record `timestampDelta` is a varlong** (upstream #159). It was encoded and decoded as a varint, so a batch with records more than about 24.8 days apart failed to encode (`TimestampDeltaOverflow`), and Java-written records with such deltas failed to decode. It now matches Java's `DefaultRecord` and the spec (`spec/src/records.rs`). `TimestampDeltaOverflow` now fires only when the `i64` subtraction overflows.
+- **Untrusted `record_count` no longer sizes the record allocation** (upstream #156). `RecordBatchDecoder` reserved capacity for the batch's declared record count before decoding, so a hostile count aborted the process on allocation failure. The reservation is now capped at the bytes remaining.
+
+### Changes
+
+- `ResponseError::try_from_code`, `code` and `is_retriable` are `const fn` (upstream #153).
+
 ## 0.20.0
 
 ### Breaking

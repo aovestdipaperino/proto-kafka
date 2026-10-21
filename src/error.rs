@@ -139,7 +139,7 @@ macro_rules! define_errors {
                 #[doc = ""]
                 #[doc = "Returns `None` if the error `code` is `0`."]
                 #[doc = concat!("Otherwise, the `Some(", stringify!($name), ")` is returned.")]
-                #[must_use] pub fn try_from_code(code: i16) -> Option<Self> {
+                #[must_use] pub const fn try_from_code(code: i16) -> Option<Self> {
                     match code {
                         0 => None,
                         $(
@@ -150,7 +150,7 @@ macro_rules! define_errors {
                 }
 
                 /// Get the corresponding error code to the error
-                #[must_use] pub fn code(&self) -> i16 {
+                #[must_use] pub const fn code(&self) -> i16 {
                     match *self {
                         $name::Unknown(code) => code,
                         $(
@@ -162,7 +162,7 @@ macro_rules! define_errors {
                 /// Check if is it a retriable error.
                 ///
                 /// Whether an error is retriable or not is defined by the Kafka protocol.
-                #[must_use] pub fn is_retriable(&self) -> bool {
+                #[must_use] pub const fn is_retriable(&self) -> bool {
                     match *self {
                         // Client-side unknown mark as non-retriable
                         $name::Unknown(_) => false,
@@ -580,3 +580,13 @@ impl From<bytes::TryGetError> for ProtoError {
 
 /// Result type for proto-kafka operations.
 pub type Result<T> = std::result::Result<T, ProtoError>;
+
+// Compile-time check that the `ResponseError` helpers stay usable in const contexts.
+const _: () = {
+    assert!(matches!(
+        ResponseError::try_from_code(2),
+        Some(ResponseError::CorruptMessage)
+    ));
+    assert!(ResponseError::CorruptMessage.code() == 2);
+    assert!(ResponseError::CorruptMessage.is_retriable());
+};
