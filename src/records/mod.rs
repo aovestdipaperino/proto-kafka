@@ -150,23 +150,43 @@ struct BatchBounds {
     num_records: usize,
     min_offset: i64,
     max_offset: i64,
-    min_timestamp: i64,
+    /// The batch's baseTimestamp: the delete horizon when set, else the minimum timestamp.
+    base_timestamp: i64,
     max_timestamp: i64,
     base_sequence: i32,
 }
 
-struct BatchDecodeInfo {
-    record_count: usize,
-    timestamp_type: TimestampType,
-    min_offset: i64,
-    min_timestamp: i64,
-    base_sequence: i32,
-    transactional: bool,
-    control: bool,
-    partition_leader_epoch: i32,
-    producer_id: i64,
-    producer_epoch: i16,
-    compression: Compression,
+/// Metadata from a record batch header, decoded without decompressing record data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BatchDecodeInfo {
+    /// Number of records in this batch.
+    pub record_count: usize,
+    /// Indicates whether timestamps represent record creation or log append time.
+    pub timestamp_type: TimestampType,
+    /// Base offset of the batch.
+    pub min_offset: i64,
+    /// The batch's base timestamp. Record timestamps are deltas from it. When
+    /// `delete_horizon_ms` is set it holds the delete horizon (KIP-534).
+    pub min_timestamp: i64,
+    /// Base sequence number for idempotent producers.
+    pub base_sequence: i32,
+    /// Whether this batch is part of a transaction.
+    pub transactional: bool,
+    /// Whether this batch contains control records.
+    pub control: bool,
+    /// Delete horizon set by log compaction (KIP-534, attribute bit 6).
+    pub delete_horizon_ms: Option<i64>,
+    /// Epoch of the partition leader at the time of writing.
+    pub partition_leader_epoch: i32,
+    /// Producer ID for idempotent/transactional producers.
+    pub producer_id: i64,
+    /// Producer epoch for idempotent/transactional producers.
+    pub producer_epoch: i16,
+    /// Compression algorithm used for record data in this batch.
+    pub compression: Compression,
+    /// Record batch format version (magic byte).
+    pub version: i8,
 }
 
 /// Decoded records plus information about compression.
@@ -188,6 +208,9 @@ pub struct Record {
     pub transactional: bool,
     /// Whether this record is a control message, which should not be exposed to the client.
     pub control: bool,
+    /// Delete horizon set by log compaction (KIP-534). When `Some`, the batch carries
+    /// attribute bit 6 and the value is written as the batch's base timestamp, as Java does.
+    pub delete_horizon_ms: Option<i64>,
     /// Epoch of the leader for this record 's partition.
     pub partition_leader_epoch: i32,
     /// The identifier of the producer.
@@ -307,6 +330,7 @@ impl RecordBatchEncoder {
             .take_while(|record| {
                 record.transactional == first.transactional
                     && record.control == first.control
+                    && record.delete_horizon_ms == first.delete_horizon_ms
                     && record.partition_leader_epoch == first.partition_leader_epoch
                     && record.producer_id == first.producer_id
                     && record.producer_epoch == first.producer_epoch
@@ -345,7 +369,7 @@ impl RecordBatchEncoder {
                 num_records,
                 min_offset,
                 max_offset,
-                min_timestamp,
+                base_timestamp: first.delete_horizon_ms.unwrap_or(min_timestamp),
                 max_timestamp,
                 base_sequence,
             },
@@ -385,10 +409,13 @@ impl RecordBatchEncoder {
         if first_record.control {
             attributes |= 1 << 5;
         }
+        if first_record.delete_horizon_ms.is_some() {
+            attributes |= 1 << 6;
+        }
         types::Int16.encode(buf, attributes)?;
 
         types::Int32.encode(buf, (bounds.max_offset - bounds.min_offset) as i32)?;
-        types::Int64.encode(buf, bounds.min_timestamp)?;
+        types::Int64.encode(buf, bounds.base_timestamp)?;
         types::Int64.encode(buf, bounds.max_timestamp)?;
         types::Int64.encode(buf, first_record.producer_id)?;
         types::Int16.encode(buf, first_record.producer_epoch)?;
@@ -433,7 +460,7 @@ impl RecordBatchEncoder {
             buf,
             records,
             bounds.min_offset,
-            bounds.min_timestamp,
+            bounds.base_timestamp,
             options,
             compressor,
         )?;
@@ -573,7 +600,8 @@ impl RecordIterator {
         );
         // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
-        let (batch_decode_info, record_buf) = RecordBatchDecoder::decode_batch_info(buf, version)?;
+        let (batch_decode_info, record_buf) =
+            RecordBatchDecoder::decode_batch_header(buf, version)?;
 
         debug_assert!(
             batch_decode_info.record_count > 0 || record_buf.is_empty(),
@@ -597,7 +625,7 @@ impl RecordIterator {
             self.source
                 .try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let (batch_decode_info, record_buf) =
-            RecordBatchDecoder::decode_batch_info(&mut self.source, version)?;
+            RecordBatchDecoder::decode_batch_header(&mut self.source, version)?;
         self.buf = record_buf;
         self.batch_decode_info = batch_decode_info;
         self.current = 0;
@@ -652,6 +680,28 @@ impl RecordBatchDecoder {
         Ok(batches)
     }
 
+    /// Decode the headers of every record batch in the buffer without decompressing records.
+    ///
+    /// Each batch's CRC is checked. Useful for inspecting metadata (record counts, offsets,
+    /// producer info, compression, delete horizon) on raw `records` bytes from
+    /// [`FetchResponse`](crate::messages::fetch_response::FetchResponse) or
+    /// [`ProduceRequest`](crate::messages::produce_request::ProduceRequest) partitions.
+    /// Legacy message sets (v0/v1) fail with
+    /// [`ProtoError::UnsupportedMessageSetVersion`], as in [`Self::decode_all`].
+    pub fn decode_batch_info<B: ByteBuf>(buf: &mut B) -> Result<Vec<BatchDecodeInfo>> {
+        let mut headers = Vec::new();
+        while buf.has_remaining() {
+            // try_peek_bytes validates the range; indexing is guaranteed safe.
+            let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
+            match version {
+                0..=1 => return Err(ProtoError::UnsupportedMessageSetVersion { version }),
+                2 => headers.push(Self::decode_batch_header(buf, version)?.0),
+                _ => return Err(ProtoError::UnknownRecordBatchVersion { version }),
+            }
+        }
+        Ok(headers)
+    }
+
     /// Decode one RecordSet from the provided buffer.
     pub fn decode<B: ByteBuf>(buf: &mut B) -> Result<RecordSet> {
         Self::decode_with_custom_compression(
@@ -678,8 +728,11 @@ impl RecordBatchDecoder {
         Ok((version, compression))
     }
 
-    /// Decode the attributes word into compression, timestamp type, and flags.
-    fn decode_attributes(attributes: i16) -> Result<(Compression, TimestampType, bool, bool)> {
+    /// Decode the attributes word into compression, timestamp type, and the
+    /// transactional, control and delete-horizon flags.
+    fn decode_attributes(
+        attributes: i16,
+    ) -> Result<(Compression, TimestampType, bool, bool, bool)> {
         let compression = match attributes & 0x7 {
             0 => Compression::None,
             1 => Compression::Gzip,
@@ -695,9 +748,16 @@ impl RecordBatchDecoder {
         };
         let transactional = (attributes & (1 << 4)) != 0;
         let control = (attributes & (1 << 5)) != 0;
+        let delete_horizon = (attributes & (1 << 6)) != 0;
 
         debug_assert!(compression as u8 <= 4, "compression variant out of range");
-        Ok((compression, timestamp_type, transactional, control))
+        Ok((
+            compression,
+            timestamp_type,
+            transactional,
+            control,
+            delete_horizon,
+        ))
     }
 
     /// Decode the remaining batch fields after the attributes.
@@ -731,7 +791,10 @@ impl RecordBatchDecoder {
         ))
     }
 
-    fn decode_batch_info<B: ByteBuf>(buf: &mut B, version: i8) -> Result<(BatchDecodeInfo, Bytes)> {
+    fn decode_batch_header<B: ByteBuf>(
+        buf: &mut B,
+        version: i8,
+    ) -> Result<(BatchDecodeInfo, Bytes)> {
         debug_assert!(
             version == 2,
             "only v2 batch decoding is supported, got v{version}"
@@ -766,7 +829,7 @@ impl RecordBatchDecoder {
         }
 
         let attributes: i16 = types::Int16.decode(buf)?;
-        let (compression, timestamp_type, transactional, control) =
+        let (compression, timestamp_type, transactional, control, delete_horizon) =
             Self::decode_attributes(attributes)?;
         let (min_timestamp, producer_id, producer_epoch, base_sequence, record_count) =
             Self::decode_batch_fields(buf)?;
@@ -780,10 +843,13 @@ impl RecordBatchDecoder {
                 base_sequence,
                 transactional,
                 control,
+                // Java's DefaultRecordBatch: the base timestamp is the delete horizon.
+                delete_horizon_ms: delete_horizon.then_some(min_timestamp),
                 partition_leader_epoch,
                 producer_id,
                 producer_epoch,
                 compression,
+                version,
             },
             buf.to_owned(),
         ))
@@ -817,7 +883,7 @@ impl RecordBatchDecoder {
             "only v2 batch decoding is supported, got v{version}"
         );
         let records_before = records.len();
-        let (batch_decode_info, mut buf) = Self::decode_batch_info(buf, version)?;
+        let (batch_decode_info, mut buf) = Self::decode_batch_header(buf, version)?;
         let compression = batch_decode_info.compression;
 
         if let Some(decompress_func) = decompress_func {
@@ -1148,6 +1214,7 @@ impl Record {
         Ok(Self {
             transactional: batch_decode_info.transactional,
             control: batch_decode_info.control,
+            delete_horizon_ms: batch_decode_info.delete_horizon_ms,
             timestamp_type: batch_decode_info.timestamp_type,
             partition_leader_epoch: batch_decode_info.partition_leader_epoch,
             producer_id: batch_decode_info.producer_id,
@@ -1171,6 +1238,7 @@ mod tests {
         let record = Record {
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1203,6 +1271,7 @@ mod tests {
         let record = Record {
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1237,6 +1306,8 @@ mod tests {
                 base_sequence: 0,
                 transactional: false,
                 control: false,
+                delete_horizon_ms: None,
+                version: 2,
                 partition_leader_epoch: 0,
                 producer_id: 0,
                 producer_epoch: 0,
@@ -1256,10 +1327,12 @@ mod tests {
             base_sequence: 0,
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
             compression: Compression::None,
+            version: 2,
         }
     }
 
@@ -1271,6 +1344,7 @@ mod tests {
         let record = Record {
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1280,7 +1354,7 @@ mod tests {
             timestamp,
             key: None,
             value: None,
-            headers: Default::default(),
+            headers: IndexMap::default(),
         };
         let options = RecordEncodeOptions {
             version: 2,
@@ -1313,12 +1387,139 @@ mod tests {
         assert_eq!(records.capacity(), 0);
     }
 
+    /// Written by kafka-clients 4.1.0 `MemoryRecordsBuilder` (magic 2, no compression,
+    /// CreateTime, base offset 0, partition leader epoch 7, no producer, deleteHorizonMs
+    /// 90000) with records (0, 1000, "k", "v0") and (1, 1500, "k", null).
+    const JAVA_DELETE_HORIZON_BATCH: &str = "0000000000000000000000470000000702f5d06d6d00400000\
+        00010000000000015f9000000000000005dcffffffffffffffffffffffffffff000000021600cfee0a0002\
+        6b047630001200e7e60a02026b0100";
+
+    fn from_hex(hex: &str) -> Bytes {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect::<Vec<u8>>()
+            .into()
+    }
+
+    fn delete_horizon_records() -> Vec<Record> {
+        [(0, 1_000, Some(Bytes::from("v0"))), (1, 1_500, None)]
+            .into_iter()
+            .map(|(offset, timestamp, value)| Record {
+                transactional: false,
+                control: false,
+                delete_horizon_ms: Some(90_000),
+                partition_leader_epoch: 7,
+                producer_id: NO_PRODUCER_ID,
+                producer_epoch: NO_PRODUCER_EPOCH,
+                // The crate derives sequence as base_sequence + offset_delta.
+                sequence: NO_SEQUENCE + offset as i32,
+                timestamp_type: TimestampType::Creation,
+                offset,
+                timestamp,
+                key: Some(Bytes::from("k")),
+                value,
+                headers: IndexMap::default(),
+            })
+            .collect()
+    }
+
+    /// KIP-534: the delete horizon is the batch's base timestamp and sets attribute bit 6.
+    #[test]
+    fn delete_horizon_encodes_like_java() {
+        let mut buf = BytesMut::new();
+        RecordBatchEncoder::encode(
+            &mut buf,
+            &delete_horizon_records(),
+            &RecordEncodeOptions {
+                version: 2,
+                compression: Compression::None,
+            },
+        )
+        .expect("encode works");
+        assert_eq!(buf.freeze(), from_hex(JAVA_DELETE_HORIZON_BATCH));
+    }
+
+    #[test]
+    fn delete_horizon_decodes_java_batch() {
+        let mut buf = from_hex(JAVA_DELETE_HORIZON_BATCH);
+        let set = RecordBatchDecoder::decode(&mut buf.clone()).expect("decode works");
+        assert_eq!(set.records, delete_horizon_records());
+
+        let infos = RecordBatchDecoder::decode_batch_info(&mut buf).expect("header decodes");
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].delete_horizon_ms, Some(90_000));
+        assert_eq!(infos[0].min_timestamp, 90_000);
+        assert_eq!(infos[0].record_count, 2);
+        assert_eq!(infos[0].partition_leader_epoch, 7);
+        assert_eq!(infos[0].version, 2);
+        assert!(buf.is_empty());
+    }
+
+    /// Records with different delete horizons cannot share a batch.
+    #[test]
+    fn delete_horizon_change_starts_new_batch() {
+        let mut records = delete_horizon_records();
+        records[1].delete_horizon_ms = None;
+        records[1].sequence = NO_SEQUENCE;
+        let mut buf = BytesMut::new();
+        RecordBatchEncoder::encode(
+            &mut buf,
+            &records,
+            &RecordEncodeOptions {
+                version: 2,
+                compression: Compression::None,
+            },
+        )
+        .expect("encode works");
+
+        let mut bytes = buf.freeze();
+        let infos = RecordBatchDecoder::decode_batch_info(&mut bytes.clone()).expect("decodes");
+        let horizons: Vec<_> = infos.iter().map(|i| i.delete_horizon_ms).collect();
+        assert_eq!(horizons, [Some(90_000), None]);
+        assert_eq!(infos[1].min_timestamp, 1_500);
+
+        let decoded: Vec<Record> = RecordBatchDecoder::decode_all(&mut bytes)
+            .expect("decodes")
+            .into_iter()
+            .flat_map(|set| set.records)
+            .collect();
+        assert_eq!(decoded, records);
+    }
+
+    #[test]
+    fn decode_batch_info_empty_buffer() {
+        let infos = RecordBatchDecoder::decode_batch_info(&mut Bytes::new()).expect("decodes");
+        assert_eq!(infos, []);
+    }
+
+    #[test]
+    fn decode_batch_info_rejects_legacy_message_sets() {
+        let mut legacy = BytesMut::zeroed(raw::RECORD_BATCH_HEADER_SIZE);
+        legacy[MAGIC_BYTE_OFFSET] = 1;
+        let result = RecordBatchDecoder::decode_batch_info(&mut legacy.freeze());
+        assert!(matches!(
+            result,
+            Err(ProtoError::UnsupportedMessageSetVersion { version: 1 })
+        ));
+    }
+
+    #[test]
+    fn decode_batch_info_checks_crc() {
+        let mut bytes = BytesMut::from(&from_hex(JAVA_DELETE_HORIZON_BATCH)[..]);
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0xff;
+        let result = RecordBatchDecoder::decode_batch_info(&mut bytes.freeze());
+        assert!(matches!(result, Err(ProtoError::CrcMismatch { .. })));
+    }
+
     #[test]
     fn test_record_iterator() {
         let records_to_encode = vec![
             Record {
                 transactional: false,
                 control: false,
+                delete_horizon_ms: None,
                 partition_leader_epoch: 0,
                 producer_id: 0,
                 producer_epoch: 0,
@@ -1333,6 +1534,7 @@ mod tests {
             Record {
                 transactional: false,
                 control: false,
+                delete_horizon_ms: None,
                 partition_leader_epoch: 0,
                 producer_id: 0,
                 producer_epoch: 0,
@@ -1375,6 +1577,8 @@ mod tests {
             base_sequence: 0,
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
+            version: 2,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1419,6 +1623,8 @@ mod tests {
             base_sequence: 0,
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
+            version: 2,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1464,6 +1670,8 @@ mod tests {
             base_sequence: 0,
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
+            version: 2,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,
@@ -1488,6 +1696,7 @@ mod tests {
             Record {
                 transactional: false,
                 control: false,
+                delete_horizon_ms: None,
                 partition_leader_epoch: 0,
                 producer_id: 0,
                 producer_epoch: 0,
@@ -1502,6 +1711,7 @@ mod tests {
             Record {
                 transactional: false,
                 control: false,
+                delete_horizon_ms: None,
                 partition_leader_epoch: 0,
                 producer_id: 0,
                 producer_epoch: 0,
@@ -1518,6 +1728,7 @@ mod tests {
         let batch2_records = vec![Record {
             transactional: false,
             control: false,
+            delete_horizon_ms: None,
             partition_leader_epoch: 0,
             producer_id: 0,
             producer_epoch: 0,

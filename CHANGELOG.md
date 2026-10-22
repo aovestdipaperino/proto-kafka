@@ -4,6 +4,10 @@
 
 Imported from upstream kafka-protocol-rs.
 
+### Breaking
+
+- **KIP-534 delete horizon** (adapted from upstream #157). `Record` has a new field, `delete_horizon_ms: Option<i64>`, so struct literals must set it (usually `None`). Decoding sets it from the batch's base timestamp when attribute bit 6 is set. Encoding sets bit 6 and writes the horizon as the base timestamp, which is what Java's `MemoryRecordsBuilder` does; records with different horizons go in separate batches. Previously the bit was dropped, so re-encoding a compacted batch lost its delete horizon. Upstream models this as `delete_horizon: bool`, which keeps the bit but replaces the horizon with the earliest record timestamp on re-encode. The `delete_horizon_*` tests pin the encoding byte for byte to a batch written by kafka-clients 4.1.0.
+
 ### Bug fixes
 
 - **Record `timestampDelta` is a varlong** (upstream #159). It was encoded and decoded as a varint, so a batch with records more than about 24.8 days apart failed to encode (`TimestampDeltaOverflow`), and Java-written records with such deltas failed to decode. It now matches Java's `DefaultRecord` and the spec (`spec/src/records.rs`). `TimestampDeltaOverflow` now fires only when the `i64` subtraction overflows.
@@ -12,6 +16,8 @@ Imported from upstream kafka-protocol-rs.
 ### Changes
 
 - `ResponseError::try_from_code`, `code` and `is_retriable` are `const fn` (upstream #153).
+- **`RecordBatchDecoder::decode_batch_info`** (adapted from upstream #150) decodes the header of every batch in a buffer, with CRC checks, without decompressing records. It returns the now-public `BatchDecodeInfo` (`#[non_exhaustive]`; adds `delete_horizon_ms` and `version`). Unlike upstream, legacy v0/v1 message sets return `UnsupportedMessageSetVersion` instead of silently ending the list, matching `decode_all`. `record_count` stays `usize`.
+- Dropped the unmaintained `paste` dependency (upstream #160). `ResponseError` variant names are unchanged.
 
 ## 0.20.0
 
