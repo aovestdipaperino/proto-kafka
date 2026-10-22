@@ -205,7 +205,7 @@ fn new_record(offset: i64, v2: bool) -> Record {
         offset,
         key: Some(format!("key{offset}").into()),
         value: Some(format!("value{offset}").into()),
-        headers: indexmap::IndexMap::default(),
+        headers: Vec::new(),
     }
 }
 

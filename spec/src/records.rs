@@ -75,6 +75,40 @@ pub struct LegacyMessage {
     pub value: Option<Vec<u8>>,
 }
 
+/// Java `RecordBatch.NO_SEQUENCE`.
+pub const NO_SEQUENCE: i32 = -1;
+
+/// Java `DefaultRecordBatch.incrementSequence` (`DefaultRecordBatch.java:557-561`), transcribed
+/// in Java `int` arithmetic: every `-`/`+` wraps, including `Integer.MAX_VALUE - increment`
+/// for a negative `increment`.
+pub fn increment_sequence(sequence: i32, increment: i32) -> i32 {
+    if sequence > i32::MAX.wrapping_sub(increment) {
+        increment
+            .wrapping_sub(i32::MAX.wrapping_sub(sequence))
+            .wrapping_sub(1)
+    } else {
+        sequence.wrapping_add(increment)
+    }
+}
+
+/// The sequence Java reports for a v2 record (`DefaultRecord.readFrom`,
+/// `DefaultRecord.java:325-327`): `NO_SEQUENCE` when the batch has no base sequence.
+pub fn record_sequence(base_sequence: i32, offset_delta: i32) -> i32 {
+    if base_sequence >= 0 {
+        increment_sequence(base_sequence, offset_delta)
+    } else {
+        NO_SEQUENCE
+    }
+}
+
+impl Batch {
+    /// KIP-534: `DefaultRecordBatch.deleteHorizonMs()` is the base timestamp when attribute
+    /// bit 6 (`DELETE_HORIZON_FLAG_MASK = 0x40`) is set (`DefaultRecordBatch.java:250-258`).
+    pub fn delete_horizon_ms(&self) -> Option<i64> {
+        (self.attributes & 0x40 != 0).then_some(self.base_timestamp)
+    }
+}
+
 fn err(msg: impl Into<String>) -> SpecError {
     SpecError::Records(msg.into())
 }

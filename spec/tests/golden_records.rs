@@ -1,7 +1,9 @@
 mod common;
 
 use proto_kafka_spec::error::SpecError;
-use proto_kafka_spec::records::{decode, decode_with, Entry, Mode, Payload, RecordSet};
+use proto_kafka_spec::records::{
+    decode, decode_with, record_sequence, Entry, Mode, Payload, RecordSet, NO_SEQUENCE,
+};
 use serde_json::{json, Value as J};
 use std::collections::BTreeMap;
 
@@ -48,9 +50,11 @@ fn summarize(entries: &[Entry]) -> J {
                         "isControl": b.attributes & 0x20 != 0,
                         "timestampType": if log_append { 1 } else { 0 },
                         "maxTimestamp": b.max_timestamp,
+                        "deleteHorizonMs": b.delete_horizon_ms(),
                         "records": recs.iter().map(|r| json!({
                             "offset": b.base_offset + i64::from(r.offset_delta),
                             "timestamp": if log_append { b.max_timestamp } else { b.base_timestamp + r.timestamp_delta },
+                            "sequence": record_sequence(b.base_sequence, r.offset_delta),
                             "key": hex_or_null(&r.key),
                             "value": hex_or_null(&r.value),
                             "headers": r.headers.iter().map(|h| json!({
@@ -71,8 +75,8 @@ fn summarize(entries: &[Entry]) -> J {
                         "baseOffset": m.offset, "lastOffset": m.offset, "partitionLeaderEpoch": -1,
                         "magic": m.magic, "crc": m.crc, "producerId": -1, "producerEpoch": -1,
                         "baseSequence": -1, "isTransactional": false, "isControl": false,
-                        "timestampType": ts_type, "maxTimestamp": ts,
-                        "records": [{ "offset": m.offset, "timestamp": ts,
+                        "timestampType": ts_type, "maxTimestamp": ts, "deleteHorizonMs": null,
+                        "records": [{ "offset": m.offset, "timestamp": ts, "sequence": NO_SEQUENCE,
                                       "key": hex_or_null(&m.key), "value": hex_or_null(&m.value), "headers": [] }],
                     })
                 }

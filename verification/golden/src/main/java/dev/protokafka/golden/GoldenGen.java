@@ -20,9 +20,12 @@ import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.types.RawTaggedField;
 import org.apache.kafka.common.record.BaseRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
+import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Crc32C;
 import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
 
@@ -49,6 +52,11 @@ public final class GoldenGen {
     private static final Random R = new Random(0x5EEDL);
     /** Separate stream for CRC-fixed record mutations, so the other vectors stay byte-identical. */
     private static final Random CRC_FIXED_R = new Random(0xC4C32CL);
+    /**
+     * Separate stream for the fixed-content record sets appended after the random ones
+     * (sequence wrap-around, delete horizon), so the earlier vectors stay byte-identical.
+     */
+    private static final Random EXTRA_R = new Random(0xD6D6L);
     private static final int RECORD_MUTATIONS = 6;
     private static final int RANDOM_PER_VERSION = 3;
     private static final int MUTATIONS_PER_VECTOR = 4;
@@ -387,6 +395,43 @@ public final class GoldenGen {
                 emitRecordDecode(w, restampCrcs(mutate(b, CRC_FIXED_R)), "mutated_crc_fixed");
             }
         }
+        for (byte[] b : extraRecordSets()) {
+            emitRecordDecode(w, b, "valid");
+            for (int i = 0; i < RECORD_MUTATIONS; i++) emitRecordDecode(w, mutate(b, EXTRA_R), "mutated");
+            for (int i = 0; i < RECORD_MUTATIONS; i++) {
+                emitRecordDecode(w, restampCrcs(mutate(b, EXTRA_R)), "mutated_crc_fixed");
+            }
+        }
+    }
+
+    /**
+     * Fixed-content v2 sets for cases the random ones miss: per-record sequence wrap-around
+     * past Integer.MAX_VALUE (DefaultRecordBatch.incrementSequence) and the KIP-534 delete
+     * horizon (MemoryRecordsBuilder writes it as the base timestamp, attribute bit 6).
+     */
+    private static List<byte[]> extraRecordSets() {
+        SimpleRecord[] three = {
+            new SimpleRecord(1_000L, "k0".getBytes(StandardCharsets.UTF_8), "v0".getBytes(StandardCharsets.UTF_8)),
+            new SimpleRecord(1_500L, "k1".getBytes(StandardCharsets.UTF_8), null),
+            new SimpleRecord(2_000L, null, "v2".getBytes(StandardCharsets.UTF_8)),
+        };
+        List<byte[]> out = new ArrayList<>();
+        out.add(bytes(MemoryRecords.withIdempotentRecords(RecordBatch.MAGIC_VALUE_V2, 40L, Compression.NONE,
+            4242L, (short) 3, Integer.MAX_VALUE - 1, 9, three)));
+        out.add(bytes(deleteHorizonBatch(RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH,
+            RecordBatch.NO_SEQUENCE, three)));
+        out.add(bytes(deleteHorizonBatch(4242L, (short) 3, 17, three)));
+        return out;
+    }
+
+    private static MemoryRecords deleteHorizonBatch(long producerId, short producerEpoch, int baseSequence,
+                                                    SimpleRecord[] records) {
+        ByteBuffer buf = ByteBuffer.allocate(1024);
+        MemoryRecordsBuilder b = new MemoryRecordsBuilder(new ByteBufferOutputStream(buf), RecordBatch.MAGIC_VALUE_V2,
+            Compression.NONE, TimestampType.CREATE_TIME, 100L, RecordBatch.NO_TIMESTAMP, producerId, producerEpoch,
+            baseSequence, false, false, 7, buf.capacity(), 90_000L);
+        for (SimpleRecord r : records) b.append(r);
+        return b.build();
     }
 
     /**
@@ -451,12 +496,15 @@ public final class GoldenGen {
                 bn.put("isControl", batch.isControlBatch());
                 bn.put("timestampType", batch.timestampType().id);
                 bn.put("maxTimestamp", batch.maxTimestamp());
+                if (batch.deleteHorizonMs().isPresent()) bn.put("deleteHorizonMs", batch.deleteHorizonMs().getAsLong());
+                else bn.putNull("deleteHorizonMs");
                 ArrayNode rs = bn.putArray("records");
                 for (Record r : batch) {
                     r.ensureValid();
                     ObjectNode rn = rs.addObject();
                     rn.put("offset", r.offset());
                     rn.put("timestamp", r.timestamp());
+                    rn.put("sequence", r.sequence());
                     putHexOrNull(rn, "key", r.hasKey() ? r.key() : null);
                     putHexOrNull(rn, "value", r.hasValue() ? r.value() : null);
                     ArrayNode hs = rn.putArray("headers");

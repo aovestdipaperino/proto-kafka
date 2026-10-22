@@ -72,6 +72,65 @@ Reference: Kafka 4.1.0, commit `13f70256db3c994c590e5d262a7cc50b9e973204` (`kafk
   arrays are bounded by remaining bytes, as Java does; byte and string reads check the buffer
   before copying; header capacity is capped at the remaining bytes.
 
+### D6. Per-record sequence ignored NO_SEQUENCE and Java's wrap rule (crate bug)
+- Crate `Record::decode_new` computed `base_sequence.wrapping_add(offset_delta)`. Java
+  (`DefaultRecord.java:325-327`) gives `RecordBatch.NO_SEQUENCE` when `baseSequence < 0`.
+  Otherwise it uses `DefaultRecordBatch.incrementSequence` (`:557-561`), which wraps past
+  `Integer.MAX_VALUE` to 0 instead of going negative. **verified** by golden vectors
+  (`sequence` per record in `records.jsonl`, plus a wrap-around set: `2147483646, 2147483647, 0`).
+- The encoder grouped records into a batch while `offset - sequence` stayed constant, so a list
+  of Java-style records without a sequence (all `-1`) was written one record per batch.
+- Found while building the D11 Java vector (2026-10-22); missed before because the spec did not
+  model per-record sequences and the golden summary did not include them.
+- **Fixed:** `records::record_sequence` (an `i64` formulation), proved equal to the spec's
+  literal Java-`int` transcription `spec::records::record_sequence` for every
+  `(i32, i32)` by Kani `proofs::records::record_sequence_conforms`. The encoder writes
+  `NO_SEQUENCE` as the base for a negative first sequence, and a record joins the batch only if
+  decoding gives back its sequence (and its offset is not below the base offset).
+
+### D7. Duplicate record header keys were lost or panicked (crate bug)
+- `Record::headers` was `IndexMap<StrBytes, Option<Bytes>>`. Java's `Headers` is an ordered
+  list that allows repeated keys. A record with two `日` headers, from a `valid` golden vector
+  written by Java's producer path, kept only the last one in release builds (data loss on
+  re-encode), and panicked a `debug_assert!(headers.len() == num_headers)` in debug builds.
+  **verified** by `tests/golden_crate_records.rs`.
+- **Fixed (breaking):** `headers: Vec<(StrBytes, Option<Bytes>)>`. A second `debug_assert!`
+  rejecting empty header keys on encode was removed too: Kafka allows empty keys.
+
+### D8. Encoder base timestamp was the minimum, not the first record's (crate, encode only)
+- Java's `MemoryRecordsBuilder` (`:471-472`) sets `baseTimestamp` from the first appended
+  record, and the deltas of later records may be negative. The crate used the minimum record
+  timestamp. Both decode to the same records, but the bytes and CRC differ. 6 of the 22 valid v2
+  golden sets did not re-encode identically. **Fixed:** the first record's timestamp (or the
+  delete horizon, D11).
+
+### D9. Incomplete final batch (open)
+- Java's `ByteBufferLogInputStream.nextBatch` returns `null` for an incomplete trailing batch,
+  so the set decodes without it. Fetch responses legitimately end with one when a batch does not
+  fit `max_bytes`. The crate's `RecordBatchDecoder::decode_all` / `decode_batch_info` /
+  `records()` fail on the whole set. 118 Java-accepted mutated vectors hit this. It is counted
+  as an allowed strictness in `tests/golden_crate_records.rs` and not fixed yet.
+
+### D10. Record timestampDelta was a varint (crate bug)
+- Java's `DefaultRecord` reads and writes `timestampDelta` as a varlong. The crate used a
+  varint, so deltas beyond `i32` (about 24.8 days) failed in both directions. **Fixed** in
+  `f105d6c` (upstream #159).
+
+### D11. KIP-534 delete horizon dropped (crate bug)
+- Attribute bit 6 marks a delete horizon, stored as the batch base timestamp
+  (`MemoryRecordsBuilder.java:145-146`, `DefaultRecordBatch.java:250-258`). The crate ignored
+  the bit, so re-encoding a compacted batch lost the horizon. **Fixed** in `2af1812`:
+  `Record::delete_horizon_ms: Option<i64>`, pinned to a kafka-clients 4.1.0 batch byte for byte.
+  Upstream's version (#157, a `bool`) would keep the bit but replace the horizon value.
+
+### Debug assertions on untrusted input (crate bug, debug builds)
+- Several `debug_assert!`s in `src/records/mod.rs` checked properties of untrusted input
+  before an error path that already handled them: a non-empty buffer in
+  `decode_optional_bytes` and `RecordIterator::new`, a count-0 batch with an empty payload, the
+  header count (D7), and the encode-side version and `i32` field lengths. Hostile bytes or API
+  arguments panicked debug builds instead of returning an error. Removed (2026-10-22); the
+  remaining ones hold by construction.
+
 ### Other varint decoders (Phase 5 scope)
 
 - `src/records/raw.rs:70-82` (`decode_varint`, protobuf-style u64): rejects a 10th-byte
@@ -379,13 +438,15 @@ encoders, checked on all 11,760 golden message vectors:
   `BytesMut::advance_mut` contract cases) plus 5 framing encode harnesses. Bounds: up to
   3-4 bytes, 0.5-16.8s each. `SegmentedBuf::advance_mut` is argued by hand (above).
 - Task 6.5 (`bfdbb11`): to get past the Task 6 decode blocker, the spec gained a Value-free
-  field decoder, `interp::decode_field`, which `interp::decode` reuses. The seven framing
-  decode harnesses were split by length-prefix class into concrete-prefix harnesses
-  (`src/proofs/framing.rs`, `decode_harnesses!`). Their Kani results are not recorded here:
-  the full `cargo kani` run was not part of Task 7. `src/proofs/framing.rs` still contains a
-  `// TEMP-EXPERIMENTS` block (`zz_orig_*`, the original symbolic-length harnesses that do
-  not terminate). It must be removed or filtered out before running the documented
-  `cargo kani --tests` command.
+  field decoder, `interp::decode_field`, which `interp::decode` reuses, and the seven framing
+  decode harnesses were split by length-prefix class. **Superseded:** `cb7463e` disabled
+  them (exploration code, never registered) and `fc93b69` deleted them, together with the
+  `// TEMP-EXPERIMENTS` block. The decode direction of strings, bytes and arrays is **not**
+  model-checked; it is covered by the golden vectors and unit tests only. `interp::decode_field`
+  remains in the spec.
+- Registered harnesses (2026-10-22): 36 = 11 `primitives` + 6 `wrappers` + 5 `framing`
+  (encode) + 13 `unsafe_sites` + 1 `records` (`record_sequence_conforms`, D6, complete over
+  `i32 x i32`, 0.2s).
 
 ### Downstream: blink
 
@@ -399,3 +460,7 @@ to 0.20.0, and that upgrade brings the behaviour changes listed in `CHANGELOG.md
   allocation, now fail with `ProtoError::{VarintTooLong, VarintOverflow, StringTooLong,
   ArrayTooLong}`.
 - D4: a nullable-struct marker of `0` now decodes as present.
+
+The upstream import and records work of 2026-10-21/22 (`CHANGELOG.md` Unreleased) adds
+breaking changes to `Record`: `delete_horizon_ms` (D11) and `headers` as a `Vec` (D7).
+blink code that builds `Record` values or looks up headers by key must be updated.

@@ -62,7 +62,6 @@ use crate::error::{ProtoError, Result};
 use bytes::{Bytes, BytesMut};
 use crc::{Crc, CRC_32_ISO_HDLC};
 use crc32c::crc32c;
-use indexmap::IndexMap;
 
 use crate::protocol::{
     buf::{gap, ByteBuf, ByteBufMut, TypedGap},
@@ -133,6 +132,39 @@ pub const NO_PARTITION_LEADER_EPOCH: i32 = -1;
 pub const NO_SEQUENCE: i32 = -1;
 /// Value to indicate missing timestamp.
 pub const NO_TIMESTAMP: i64 = -1;
+
+/// Any negative sequence means "no sequence"; Kafka only has [`NO_SEQUENCE`] for it.
+const fn normalize_sequence(sequence: i32) -> i32 {
+    if sequence < 0 {
+        NO_SEQUENCE
+    } else {
+        sequence
+    }
+}
+
+/// The sequence of the record at `offset_delta` in a batch, as Java's `DefaultRecord.readFrom`
+/// computes it: [`NO_SEQUENCE`] when the batch has no base sequence, else
+/// `DefaultRecordBatch.incrementSequence`, which wraps past `i32::MAX` to 0 (D6).
+///
+/// Java evaluates `incrementSequence` in wrapping `int` arithmetic. This is the same
+/// function written over `i64`; `proofs::records` proves it equal to the spec's literal
+/// transcription for every input.
+pub(crate) const fn record_sequence(base_sequence: i32, offset_delta: i32) -> i32 {
+    if base_sequence < 0 {
+        return NO_SEQUENCE;
+    }
+    let sum = base_sequence as i64 + offset_delta as i64;
+    // Java's `sequence > Integer.MAX_VALUE - increment`, with the subtraction's overflow
+    // for a negative increment taken into account.
+    let wraps = if offset_delta >= 0 {
+        sum > i32::MAX as i64
+    } else {
+        sum >= i32::MIN as i64
+    };
+    let shifted = if wraps { sum + (1 << 31) } else { sum };
+    // Truncation is the final wrap of Java's `int` result.
+    shifted as i32
+}
 // In this range of versions of the Kafka protocol
 // the only valid record batch request version is 2.
 // 0-1 are officially deprecated with Kafka 4.0
@@ -150,7 +182,8 @@ struct BatchBounds {
     num_records: usize,
     min_offset: i64,
     max_offset: i64,
-    /// The batch's baseTimestamp: the delete horizon when set, else the minimum timestamp.
+    /// The batch's baseTimestamp: the delete horizon when set, else the first record's
+    /// timestamp, as Java's `MemoryRecordsBuilder` sets it (D8).
     base_timestamp: i64,
     max_timestamp: i64,
     base_sequence: i32,
@@ -232,7 +265,9 @@ pub struct Record {
     /// The payload of the record.
     pub value: Option<Bytes>,
     /// Headers associated with the record's payload.
-    pub headers: IndexMap<StrBytes, Option<Bytes>>,
+    ///
+    /// An ordered list, as in Java's `Headers`: keys may repeat, and order is kept (D7).
+    pub headers: Vec<(StrBytes, Option<Bytes>)>,
 }
 
 const MAGIC_BYTE_OFFSET: usize = 16;
@@ -272,11 +307,6 @@ impl RecordBatchEncoder {
         I::IntoIter: Clone,
         CF: Fn(&mut BytesMut, &mut B, Compression) -> Result<()>,
     {
-        debug_assert!(
-            (0..=2).contains(&options.version),
-            "record batch version must be 0-2, got {}",
-            options.version
-        );
         debug_assert!(
             matches!(
                 options.compression,
@@ -325,6 +355,7 @@ impl RecordBatchEncoder {
     {
         let mut peeker = records.clone();
         let first = peeker.next()?;
+        let base_sequence = normalize_sequence(first.sequence);
 
         let num_records = peeker
             .take_while(|record| {
@@ -334,30 +365,32 @@ impl RecordBatchEncoder {
                     && record.partition_leader_epoch == first.partition_leader_epoch
                     && record.producer_id == first.producer_id
                     && record.producer_epoch == first.producer_epoch
-                    && (record.offset as i32).wrapping_sub(record.sequence)
-                        == (first.offset as i32).wrapping_sub(first.sequence)
+                    // The first record carries the batch's base offset and base sequence, so a
+                    // record joins only if decoding would give back its own sequence (D6).
+                    && record.offset >= first.offset
+                    && i32::try_from(record.offset - first.offset).is_ok_and(|delta| {
+                        record_sequence(base_sequence, delta) == normalize_sequence(record.sequence)
+                    })
             })
             .count()
             + 1;
 
-        let (min_offset, max_offset, min_timestamp, max_timestamp) =
-            records.clone().take(num_records).fold(
-                (i64::MAX, i64::MIN, i64::MAX, i64::MIN),
-                |(min_off, max_off, min_ts, max_ts), r| {
-                    (
-                        min_off.min(r.offset),
-                        max_off.max(r.offset),
-                        min_ts.min(r.timestamp),
-                        max_ts.max(r.timestamp),
-                    )
-                },
-            );
-
-        let base_sequence = first
-            .sequence
-            .wrapping_sub((first.offset - min_offset) as i32);
+        let (min_offset, max_offset, max_timestamp) = records.clone().take(num_records).fold(
+            (i64::MAX, i64::MIN, i64::MIN),
+            |(min_off, max_off, max_ts), r| {
+                (
+                    min_off.min(r.offset),
+                    max_off.max(r.offset),
+                    max_ts.max(r.timestamp),
+                )
+            },
+        );
 
         debug_assert!(num_records > 0, "batch must contain at least one record");
+        debug_assert!(
+            min_offset == first.offset,
+            "the first record must carry the base offset"
+        );
         debug_assert!(
             min_offset <= max_offset,
             "min_offset ({min_offset}) must be <= max_offset ({max_offset})"
@@ -369,7 +402,7 @@ impl RecordBatchEncoder {
                 num_records,
                 min_offset,
                 max_offset,
-                base_timestamp: first.delete_horizon_ms.unwrap_or(min_timestamp),
+                base_timestamp: first.delete_horizon_ms.unwrap_or(first.timestamp),
                 max_timestamp,
                 base_sequence,
             },
@@ -594,19 +627,11 @@ impl Iterator for RecordIterator {
 
 impl RecordIterator {
     fn new(buf: &mut Bytes) -> Result<Self> {
-        debug_assert!(
-            !buf.is_empty(),
-            "buffer must have remaining bytes to create a RecordIterator"
-        );
         // try_peek_bytes validates the range; indexing is guaranteed safe.
         let version = buf.try_peek_bytes(MAGIC_BYTE_OFFSET..(MAGIC_BYTE_OFFSET + 1))?[0] as i8;
         let (batch_decode_info, record_buf) =
             RecordBatchDecoder::decode_batch_header(buf, version)?;
 
-        debug_assert!(
-            batch_decode_info.record_count > 0 || record_buf.is_empty(),
-            "zero-record batch should have empty record buffer"
-        );
         Ok(RecordIterator {
             buf: record_buf,
             source: buf.clone(),
@@ -941,10 +966,6 @@ fn encode_optional_bytes<B: ByteBufMut>(
     field_name: &'static str,
 ) -> Result<()> {
     debug_assert!(!field_name.is_empty(), "field_name must not be empty");
-    debug_assert!(
-        data.as_ref().is_none_or(|d| i32::try_from(d.len()).is_ok()),
-        "data length must fit in i32 for field '{field_name}'"
-    );
     if let Some(d) = data {
         if d.len() > i32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
@@ -960,20 +981,8 @@ fn encode_optional_bytes<B: ByteBufMut>(
     Ok(())
 }
 
-/// Encode the headers map: count followed by key-value pairs.
-fn encode_headers<B: ByteBufMut>(
-    buf: &mut B,
-    headers: &IndexMap<StrBytes, Option<Bytes>>,
-) -> Result<()> {
-    debug_assert!(
-        i32::try_from(headers.len()).is_ok(),
-        "headers count ({}) must fit in i32",
-        headers.len()
-    );
-    debug_assert!(
-        headers.keys().all(|k| !k.is_empty()),
-        "all header keys should be non-empty"
-    );
+/// Encode the headers: count followed by key-value pairs.
+fn encode_headers<B: ByteBufMut>(buf: &mut B, headers: &[(StrBytes, Option<Bytes>)]) -> Result<()> {
     if headers.len() > i32::MAX as usize {
         return Err(ProtoError::FieldTooLarge {
             field: "record headers count",
@@ -994,10 +1003,6 @@ fn decode_optional_bytes<B: ByteBuf>(
     field_name: &'static str,
 ) -> Result<Option<Bytes>> {
     debug_assert!(!field_name.is_empty(), "field_name must not be empty");
-    debug_assert!(
-        buf.has_remaining(),
-        "buffer must have remaining bytes for field '{field_name}'"
-    );
     let len: i32 = types::VarInt.decode(buf)?;
     match len.cmp(&-1) {
         Ordering::Less => Err(ProtoError::NegativeLength {
@@ -1009,12 +1014,8 @@ fn decode_optional_bytes<B: ByteBuf>(
     }
 }
 
-/// Decode the headers map from a buffer.
-fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<Bytes>>> {
-    debug_assert!(
-        buf.has_remaining(),
-        "buffer must have remaining bytes to decode headers"
-    );
+/// Decode the headers from a buffer, keeping duplicates and order as Java does (D7).
+fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<Vec<(StrBytes, Option<Bytes>)>> {
     let num_headers: i32 = types::VarInt.decode(buf)?;
     if num_headers < 0 {
         return Err(ProtoError::NegativeLength {
@@ -1024,7 +1025,7 @@ fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<B
     }
     let num_headers = num_headers as usize;
     // Each header takes at least 2 bytes, so the remaining length bounds the count (D5).
-    let mut headers = IndexMap::with_capacity(num_headers.min(buf.remaining()));
+    let mut headers = Vec::with_capacity(num_headers.min(buf.remaining()));
     for _ in 0..num_headers {
         let key_len: i32 = types::VarInt.decode(buf)?;
         if key_len < 0 {
@@ -1035,23 +1036,14 @@ fn decode_headers<B: ByteBuf>(buf: &mut B) -> Result<IndexMap<StrBytes, Option<B
         }
         let key = StrBytes::try_from(buf.try_get_bytes(key_len as usize)?)?;
         let value = decode_optional_bytes(buf, "record header value length")?;
-        headers.insert(key, value);
+        headers.push((key, value));
     }
-    debug_assert!(
-        headers.len() == num_headers,
-        "decoded header count ({}) must match declared count ({num_headers})",
-        headers.len()
-    );
     Ok(headers)
 }
 
 /// Compute the encoded size of an optional bytes field.
 fn compute_optional_bytes_size(data: Option<&[u8]>, field_name: &'static str) -> Result<usize> {
     debug_assert!(!field_name.is_empty(), "field_name must not be empty");
-    debug_assert!(
-        data.as_ref().is_none_or(|d| i32::try_from(d.len()).is_ok()),
-        "data length must fit in i32 for field '{field_name}'"
-    );
     if let Some(d) = data {
         if d.len() > i32::MAX as usize {
             return Err(ProtoError::FieldTooLarge {
@@ -1065,17 +1057,8 @@ fn compute_optional_bytes_size(data: Option<&[u8]>, field_name: &'static str) ->
     }
 }
 
-/// Compute the encoded size of the headers map.
-fn compute_headers_size(headers: &IndexMap<StrBytes, Option<Bytes>>) -> Result<usize> {
-    debug_assert!(
-        i32::try_from(headers.len()).is_ok(),
-        "headers count ({}) must fit in i32",
-        headers.len()
-    );
-    debug_assert!(
-        headers.keys().all(|k| !k.is_empty()),
-        "all header keys should be non-empty"
-    );
+/// Compute the encoded size of the headers.
+fn compute_headers_size(headers: &[(StrBytes, Option<Bytes>)]) -> Result<usize> {
     if headers.len() > i32::MAX as usize {
         return Err(ProtoError::FieldTooLarge {
             field: "record headers count",
@@ -1205,7 +1188,7 @@ impl Record {
 
         let offset_delta: i32 = types::VarInt.decode(buf)?;
         let offset = batch_decode_info.min_offset + offset_delta as i64;
-        let sequence = batch_decode_info.base_sequence.wrapping_add(offset_delta);
+        let sequence = record_sequence(batch_decode_info.base_sequence, offset_delta);
 
         let key = decode_optional_bytes(buf, "record key length")?;
         let value = decode_optional_bytes(buf, "record value length")?;
@@ -1258,9 +1241,10 @@ mod tests {
             Bytes::from("some-value"),
             record
                 .headers
-                // This relies on `impl Borrow<[u8]> for StrBytes`
-                .get("some-key".as_bytes())
+                .iter()
+                .find(|(k, _)| k.as_bytes() == b"some-key")
                 .expect("key exists in headers")
+                .1
                 .as_ref()
                 .expect("value is present")
         );
@@ -1354,7 +1338,7 @@ mod tests {
             timestamp,
             key: None,
             value: None,
-            headers: IndexMap::default(),
+            headers: Vec::new(),
         };
         let options = RecordEncodeOptions {
             version: 2,
@@ -1412,14 +1396,13 @@ mod tests {
                 partition_leader_epoch: 7,
                 producer_id: NO_PRODUCER_ID,
                 producer_epoch: NO_PRODUCER_EPOCH,
-                // The crate derives sequence as base_sequence + offset_delta.
-                sequence: NO_SEQUENCE + offset as i32,
+                sequence: NO_SEQUENCE,
                 timestamp_type: TimestampType::Creation,
                 offset,
                 timestamp,
                 key: Some(Bytes::from("k")),
                 value,
-                headers: IndexMap::default(),
+                headers: Vec::new(),
             })
             .collect()
     }
@@ -1487,6 +1470,110 @@ mod tests {
         assert_eq!(decoded, records);
     }
 
+    fn plain_record(offset: i64, sequence: i32) -> Record {
+        Record {
+            transactional: false,
+            control: false,
+            delete_horizon_ms: None,
+            partition_leader_epoch: 0,
+            producer_id: NO_PRODUCER_ID,
+            producer_epoch: NO_PRODUCER_EPOCH,
+            sequence,
+            timestamp_type: TimestampType::Creation,
+            offset,
+            timestamp: 1_000 - offset,
+            key: None,
+            value: Some(Bytes::from("v")),
+            headers: Vec::new(),
+        }
+    }
+
+    fn encode_v2(records: &[Record]) -> Bytes {
+        let mut buf = BytesMut::new();
+        RecordBatchEncoder::encode(
+            &mut buf,
+            records,
+            &RecordEncodeOptions {
+                version: 2,
+                compression: Compression::None,
+            },
+        )
+        .expect("encode works");
+        buf.freeze()
+    }
+
+    /// D6: without a base sequence every record has NO_SEQUENCE, as in Java, and such
+    /// records share one batch.
+    #[test]
+    fn records_without_sequence_share_a_batch() {
+        let records: Vec<Record> = (0..3).map(|o| plain_record(o, NO_SEQUENCE)).collect();
+        let mut bytes = encode_v2(&records);
+        let infos = RecordBatchDecoder::decode_batch_info(&mut bytes.clone()).expect("decodes");
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].base_sequence, NO_SEQUENCE);
+        let set = RecordBatchDecoder::decode(&mut bytes).expect("decodes");
+        assert_eq!(set.records, records);
+    }
+
+    /// D6: sequences wrap past i32::MAX to 0 (Java `DefaultRecordBatch.incrementSequence`).
+    #[test]
+    fn record_sequence_wraps_to_zero() {
+        let records = vec![
+            plain_record(0, i32::MAX - 1),
+            plain_record(1, i32::MAX),
+            plain_record(2, 0),
+        ];
+        let mut bytes = encode_v2(&records);
+        let infos = RecordBatchDecoder::decode_batch_info(&mut bytes.clone()).expect("decodes");
+        assert_eq!(infos.len(), 1);
+        let set = RecordBatchDecoder::decode(&mut bytes).expect("decodes");
+        assert_eq!(set.records, records);
+        assert_eq!(record_sequence(-7, 3), NO_SEQUENCE);
+    }
+
+    /// D6: a record whose sequence does not follow from the batch's starts a new batch.
+    #[test]
+    fn sequence_gap_starts_new_batch() {
+        let records = vec![plain_record(0, 5), plain_record(1, 9)];
+        let mut bytes = encode_v2(&records);
+        let infos = RecordBatchDecoder::decode_batch_info(&mut bytes.clone()).expect("decodes");
+        let bases: Vec<i32> = infos.iter().map(|i| i.base_sequence).collect();
+        assert_eq!(bases, [5, 9]);
+        let decoded: Vec<Record> = RecordBatchDecoder::decode_all(&mut bytes)
+            .expect("decodes")
+            .into_iter()
+            .flat_map(|set| set.records)
+            .collect();
+        assert_eq!(decoded, records);
+    }
+
+    /// D7: header keys may repeat and keep their order, as in Java's `Headers`.
+    #[test]
+    fn duplicate_header_keys_round_trip() {
+        let mut record = plain_record(0, NO_SEQUENCE);
+        record.headers = vec![
+            ("trace".into(), Some(Bytes::from("a"))),
+            ("other".into(), None),
+            ("trace".into(), Some(Bytes::from("b"))),
+            ("".into(), Some(Bytes::from("empty key"))),
+        ];
+        let mut bytes = encode_v2(std::slice::from_ref(&record));
+        let set = RecordBatchDecoder::decode(&mut bytes).expect("decodes");
+        assert_eq!(set.records, [record]);
+    }
+
+    /// D8: the base timestamp is the first record's, as Java's `MemoryRecordsBuilder` sets it,
+    /// not the minimum.
+    #[test]
+    fn base_timestamp_is_first_record_timestamp() {
+        let records = vec![plain_record(0, NO_SEQUENCE), plain_record(1, NO_SEQUENCE)];
+        let mut bytes = encode_v2(&records);
+        let infos = RecordBatchDecoder::decode_batch_info(&mut bytes.clone()).expect("decodes");
+        assert_eq!(infos[0].min_timestamp, 1_000);
+        let set = RecordBatchDecoder::decode(&mut bytes).expect("decodes");
+        assert_eq!(set.records, records);
+    }
+
     #[test]
     fn decode_batch_info_empty_buffer() {
         let infos = RecordBatchDecoder::decode_batch_info(&mut Bytes::new()).expect("decodes");
@@ -1529,7 +1616,7 @@ mod tests {
                 timestamp: 0,
                 key: Some(Bytes::from("key1")),
                 value: Some(Bytes::from("value1")),
-                headers: IndexMap::new(),
+                headers: Vec::new(),
             },
             Record {
                 transactional: false,
@@ -1544,7 +1631,7 @@ mod tests {
                 timestamp: 1,
                 key: Some(Bytes::from("key2")),
                 value: Some(Bytes::from("value2")),
-                headers: IndexMap::new(),
+                headers: Vec::new(),
             },
         ];
 
@@ -1706,7 +1793,7 @@ mod tests {
                 timestamp: 0,
                 key: Some(Bytes::from("batch1_key1")),
                 value: Some(Bytes::from("batch1_value1")),
-                headers: IndexMap::new(),
+                headers: Vec::new(),
             },
             Record {
                 transactional: false,
@@ -1721,7 +1808,7 @@ mod tests {
                 timestamp: 1,
                 key: Some(Bytes::from("batch1_key2")),
                 value: Some(Bytes::from("batch1_value2")),
-                headers: IndexMap::new(),
+                headers: Vec::new(),
             },
         ];
 
@@ -1738,7 +1825,7 @@ mod tests {
             timestamp: 0,
             key: Some(Bytes::from("batch2_key1")),
             value: Some(Bytes::from("batch2_value1")),
-            headers: IndexMap::new(),
+            headers: Vec::new(),
         }];
 
         let opts = RecordEncodeOptions {

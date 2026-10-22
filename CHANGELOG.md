@@ -8,8 +8,13 @@ Imported from upstream kafka-protocol-rs.
 
 - **KIP-534 delete horizon** (adapted from upstream #157). `Record` has a new field, `delete_horizon_ms: Option<i64>`, so struct literals must set it (usually `None`). Decoding sets it from the batch's base timestamp when attribute bit 6 is set. Encoding sets bit 6 and writes the horizon as the base timestamp, which is what Java's `MemoryRecordsBuilder` does; records with different horizons go in separate batches. Previously the bit was dropped, so re-encoding a compacted batch lost its delete horizon. Upstream models this as `delete_horizon: bool`, which keeps the bit but replaces the horizon with the earliest record timestamp on re-encode. The `delete_horizon_*` tests pin the encoding byte for byte to a batch written by kafka-clients 4.1.0.
 
+- **Record headers are an ordered list (D7).** `Record::headers` is now `Vec<(StrBytes, Option<Bytes>)>` instead of `IndexMap<StrBytes, Option<Bytes>>`. Kafka allows repeated header keys (Java's `Headers` is a list). The map kept only the last header for a key, losing data on re-encode, and panicked in debug builds. Look headers up with `iter().find(..)` or `iter().filter(..)`. `proto_kafka::indexmap` is still re-exported.
+
 ### Bug fixes
 
+- **Per-record sequences follow Java (D6).** A batch with no base sequence now gives every record `NO_SEQUENCE` (-1), where it used to give -1, 0, 1, …. Sequences wrap past `i32::MAX` to 0, as `DefaultRecordBatch.incrementSequence` does, instead of going negative. The encoder keeps records without a sequence in one batch, where it used to write one batch per record. Kani proves the rule equal to the spec's transcription of Java for every input.
+- **The encoder's base timestamp is the first record's timestamp (D8)**, as in Java's `MemoryRecordsBuilder`, instead of the minimum. Decoded values are unchanged; encoded bytes now match Java's.
+- **No debug-build panics on hostile input.** Removed the `debug_assert!`s in the record decoder and encoder that fired on untrusted bytes or out-of-range arguments before the existing error paths.
 - **Record `timestampDelta` is a varlong** (upstream #159). It was encoded and decoded as a varint, so a batch with records more than about 24.8 days apart failed to encode (`TimestampDeltaOverflow`), and Java-written records with such deltas failed to decode. It now matches Java's `DefaultRecord` and the spec (`spec/src/records.rs`). `TimestampDeltaOverflow` now fires only when the `i64` subtraction overflows.
 - **Untrusted `record_count` no longer sizes the record allocation** (upstream #156). `RecordBatchDecoder` reserved capacity for the batch's declared record count before decoding, so a hostile count aborted the process on allocation failure. The reservation is now capped at the bytes remaining.
 
@@ -18,6 +23,7 @@ Imported from upstream kafka-protocol-rs.
 - `ResponseError::try_from_code`, `code` and `is_retriable` are `const fn` (upstream #153).
 - **`RecordBatchDecoder::decode_batch_info`** (adapted from upstream #150) decodes the header of every batch in a buffer, with CRC checks, without decompressing records. It returns the now-public `BatchDecodeInfo` (`#[non_exhaustive]`; adds `delete_horizon_ms` and `version`). Unlike upstream, legacy v0/v1 message sets return `UnsupportedMessageSetVersion` instead of silently ending the list, matching `decode_all`. `record_count` stays `usize`.
 - Dropped the unmaintained `paste` dependency (upstream #160). `ResponseError` variant names are unchanged.
+- New `tests/golden_crate_records.rs`: the crate's record decoder and encoder against every golden record vector, which now include per-record sequences, delete horizons and three fixed-content sets. All 22 valid v2 sets re-encode to Java's bytes. Known open divergence: a set ending in an incomplete batch fails to decode, while Java drops the tail (D9).
 
 ## 0.20.0
 

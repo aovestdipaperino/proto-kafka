@@ -28,7 +28,7 @@ number stays reserved so S1-S5 keep their names.
 
 Strict-rejection counts from the last golden run (asserted exactly by the golden tests):
 `checked 11760 message vectors; strict rejections where Java accepts: {"S1NegativeLength": 45, "S2InvalidUtf8": 439, "S3TagOrder": 1, "S4TagSize": 6}`
-and `checked 494 record vectors {"mutated": 228, "mutated_crc_fixed": 228, "valid": 38}; strict rejections where Java accepts: {"S1NegativeLength": 8, "S2InvalidUtf8": 2}; opaque compressed accepted where Java rejects: 1`
+and `checked 533 record vectors {"mutated": 246, "mutated_crc_fixed": 246, "valid": 41}; strict rejections where Java accepts: {"S1NegativeLength": 8, "S2InvalidUtf8": 2}; opaque compressed accepted where Java rejects: 1`
 
 ## Spec more lenient than Java (documented exception)
 
@@ -57,17 +57,36 @@ codec 4 with a garbage payload, "Failed to decompress record stream").
 | D3 | `CompactString` decoders accept strings longer than 0x7fff; Java rejects them | fixed in Phase 2 |
 | D4 | `OptionStruct` treats only marker `1` as present; Java treats any non-negative marker as present | fixed in Phase 2 |
 | D5 | Arrays, bytes, strings and record headers pre-allocate by an attacker-controlled length (DoS); Java bounds arrays by remaining bytes | fixed in Phase 2 |
+| D6 | Per-record `sequence` was `base_sequence.wrapping_add(offset_delta)`. Java (`DefaultRecord.java:325-327`) gives `NO_SEQUENCE` when `baseSequence < 0`, and otherwise uses `incrementSequence`, which wraps past `i32::MAX` to 0. The encoder grouped records by `offset - sequence`, so Java-style records without a sequence went one per batch | fixed (`records::record_sequence`, Kani `record_sequence_conforms`) |
+| D7 | Record headers were an `IndexMap`: a duplicate key dropped the earlier header (release) or panicked a `debug_assert!` (debug). Java's `Headers` is an ordered list. Hit by a `valid` golden vector | fixed (`Record::headers` is `Vec<(StrBytes, Option<Bytes>)>`; breaking) |
+| D8 | Encoder wrote the minimum record timestamp as `baseTimestamp`. Java's `MemoryRecordsBuilder` (`:471-472`) uses the first record's timestamp. Both decode to the same records, but the bytes and CRC differ | fixed (6 valid vectors now re-encode identically) |
+| D9 | A record set ending in an incomplete batch: Java (`ByteBufferLogInputStream.nextBatch`) silently drops the tail, and brokers send such tails in Fetch responses. The crate's `decode_all` / `decode_batch_info` fail on the whole set | **open**: counted as an allowed strictness (118 vectors) in `tests/golden_crate_records.rs` |
+| D10 | Record `timestampDelta` decoded and encoded as varint; Java uses varlong | fixed (upstream #159, `f105d6c`) |
+| D11 | Batch attribute bit 6 (KIP-534 delete horizon) was dropped on decode; re-encoding lost the horizon | fixed (`Record::delete_horizon_ms`, `2af1812`) |
 
 `tests/golden_crate.rs` checks the crate's request/response/header decoders and encoders on
 every golden message vector: 11,560 checked, 0 known divergences
 (`verification/crate_known_divergences.txt` is empty). It also skips 200 vectors, listed
 under Coverage notes.
 
+`tests/golden_crate_records.rs` checks the crate's record batch decoder and encoder on every
+golden record vector, with the outcome histogram asserted exactly:
+`{"crate_rejects_spec_strict_rejects": 2, "crate_rejects_truncated_tail": 118, "java_accepts_crate_matches": 56, "java_rejects_crate_rejects": 233, "skipped_legacy": 124, "valid_reencoded_identically": 22}`.
+Every Java-accepted v2 set decodes to Java's batch and record values, including each record's
+`sequence` and the batch's `deleteHorizonMs`, unless the crate rejects with an allowed
+strictness (S1/S2, or D9). All 22 valid v2 sets re-encode to Java's exact bytes. Legacy
+v0/v1 sets are skipped because the crate rejects them by design. D6-D9 were found by this
+test and by the Java vector built for D11.
+
 ## Coverage notes
 
 - Golden messages never set records fields to non-empty values (Java's JsonConverter is
   lossy for records). Record contents are covered by `records.jsonl`.
 - Golden records contain no valid compressed batches and no LOG_APPEND_TIME batches.
+- `records.jsonl` records each record's `sequence` and each batch's `deleteHorizonMs`. Three
+  fixed-content v2 sets are appended after the random ones, with their own `Random`, so the
+  earlier 494 vectors are unchanged: an idempotent batch whose sequences wrap past `i32::MAX`,
+  and delete-horizon batches without and with a producer sequence.
 - Record mutations come in two kinds: `mutated` (CRC left broken, so Java mostly stops at
   `ensureValid()`) and `mutated_crc_fixed` (CRCs re-stamped, so Java reaches
   `DefaultRecord.readFrom` and legacy key/value parsing). Neither produced a

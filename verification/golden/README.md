@@ -18,9 +18,14 @@ Regenerate (Java 17 + Maven):
   each complete legacy entry into bytes 12..16). Plain mutations nearly always fail Java's CRC
   check, so only the CRC-fixed ones reach `DefaultRecord.readFrom` and legacy key/value
   parsing. The CRC-fixed mutations draw from their own seeded `Random`, so the other vectors
-  are byte-identical to the previous generator.
+  are byte-identical to the previous generator. Each record carries Java's `sequence` and each
+  batch its `deleteHorizonMs` (`null` when absent). Three fixed-content v2 sets come last,
+  drawn from their own `Random` (`EXTRA_R`) so that the earlier vectors are unchanged:
+  sequence wrap-around past `Integer.MAX_VALUE`, and KIP-534 delete-horizon batches without
+  and with a producer sequence.
 
-Consumed by `spec/tests/golden_*.rs`, which treat `mutated_crc_fixed` exactly like `mutated`. Bumping the Kafka version means bumping it here and in
+Consumed by `spec/tests/golden_*.rs` and by the crate's `tests/golden_crate.rs` and
+`tests/golden_crate_records.rs`. The spec tests treat `mutated_crc_fixed` exactly like `mutated`. Bumping the Kafka version means bumping it here and in
 `protocol_codegen/src/main.rs` together.
 
 Notes:
